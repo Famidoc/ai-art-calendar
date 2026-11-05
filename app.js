@@ -1617,6 +1617,32 @@ async function initApp() {
     triggerAutoSave();
   });
 
+  // 字級縮放控制 (A- / A+，自動記憶並針對網頁/PWA版最佳化預設大小)
+  const isElectronEnv = Boolean(window.desktopWidget?.isElectron);
+  const defaultFontScale = isElectronEnv ? 1.0 : 1.08;
+  const applyFontScale = (scale) => {
+    const clamped = Math.max(0.8, Math.min(1.45, Math.round(scale * 100) / 100));
+    state.data.settings.fontScale = clamped;
+    document.documentElement.style.setProperty('--ui-font-scale', String(clamped));
+    try { localStorage.setItem('art_calendar_font_scale', String(clamped)); } catch (_) {}
+    return clamped;
+  };
+
+  const savedFontScale = Number(localStorage.getItem('art_calendar_font_scale')) || state.data.settings.fontScale || defaultFontScale;
+  applyFontScale(savedFontScale);
+
+  document.getElementById('btn-font-dec')?.addEventListener('click', () => {
+    const next = applyFontScale((state.data.settings.fontScale || defaultFontScale) - 0.06);
+    setSaveStatus(`✓ 字體比例 ${Math.round(next * 100)}%`);
+    triggerAutoSave();
+  });
+
+  document.getElementById('btn-font-inc')?.addEventListener('click', () => {
+    const next = applyFontScale((state.data.settings.fontScale || defaultFontScale) + 0.06);
+    setSaveStatus(`✓ 字體比例 ${Math.round(next * 100)}%`);
+    triggerAutoSave();
+  });
+
   // Electron 桌面視窗控制整合 (透明度、置頂、最小化、關閉)
   const opacitySlider = document.getElementById('window-opacity-slider');
   const pinBtn = document.getElementById('btn-pin-top');

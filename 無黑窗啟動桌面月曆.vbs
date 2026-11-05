@@ -1,7 +1,9 @@
 Option Explicit
-Dim fso, shell, appDir, electronExe, edgeExe1, edgeExe2, chromeExe, rc
+Dim fso, shell, env, appDir, electronExe, edgeExe1, edgeExe2, chromeExe, rc
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
+Set env = shell.Environment("PROCESS")
+env.Remove("ELECTRON_RUN_AS_NODE")
 appDir = fso.GetParentFolderName(WScript.ScriptFullName)
 shell.CurrentDirectory = appDir
 

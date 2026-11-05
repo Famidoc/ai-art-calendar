@@ -15,12 +15,18 @@
   --holiday-red: #ff6b81;
   --solar-term: #34d399;
   --radius-widget: 18px;
+  --ui-font-scale: 1;
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+html {
+  /* 隨視窗大小等比例智慧縮放基準字體，確保在大螢幕或瀏覽器/PWA視窗中字體依然飽滿清晰 */
+  font-size: calc(clamp(16px, 0.95vw + 6.5px, 23px) * var(--ui-font-scale, 1));
 }
 
 html, body {
@@ -148,58 +154,81 @@ html, body {
   top: 0;
   left: 0;
   right: 0;
-  height: 44px;
-  padding: 0 14px;
+  min-height: 44px;
+  padding: 4px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   z-index: 10;
-  background: linear-gradient(180deg, rgba(9, 13, 22, 0.75) 0%, rgba(9, 13, 22, 0) 100%);
-  opacity: 0.35;
+  background: linear-gradient(180deg, rgba(9, 13, 22, 0.78) 0%, rgba(9, 13, 22, 0) 100%);
+  opacity: 0.42;
   transition: opacity 0.25s ease, background 0.25s ease;
+}
+
+/* 當 PWA 啟用「收合頂端橫幅 (window-controls-overlay)」時，自動為右上角系統控制鈕預留空間 */
+@media (display-mode: window-controls-overlay) {
+  .widget-container {
+    border-radius: 0;
+    border: none;
+  }
+  .widget-topbar {
+    left: env(titlebar-area-x, 0px);
+    width: env(titlebar-area-width, 100%);
+    right: auto;
+    min-height: max(44px, env(titlebar-area-height, 44px));
+    padding-right: 10px;
+  }
 }
 
 .artwork-section:hover .widget-topbar,
 .widget-topbar:focus-within {
   opacity: 1;
-  background: rgba(15, 23, 42, 0.68);
+  background: rgba(15, 23, 42, 0.72);
   backdrop-filter: blur(10px);
 }
 
 .drag-handle {
   flex: 1;
+  min-width: 120px;
   height: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   -webkit-app-region: drag;
+  app-region: drag;
   cursor: move;
 }
 
 .no-drag {
   -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .app-badge {
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   padding: 3px 8px;
   border-radius: 6px;
   background: rgba(56, 189, 248, 0.2);
   border: 1px solid rgba(56, 189, 248, 0.4);
   color: #bae6fd;
+  white-space: nowrap;
 }
 
 .save-status {
-  font-size: 0.75rem;
-  color: rgba(203, 213, 225, 0.85);
+  font-size: 0.78rem;
+  color: rgba(203, 213, 225, 0.88);
+  white-space: nowrap;
 }
 
 .topbar-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .month-QuickNav,
@@ -207,7 +236,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: rgba(15, 23, 42, 0.65);
+  background: rgba(15, 23, 42, 0.68);
   border: 1px solid var(--border-subtle);
   padding: 3px 6px;
   border-radius: 9px;
@@ -218,7 +247,7 @@ html, body {
   background: transparent;
   color: var(--text-main);
   border: none;
-  font-size: 0.84rem;
+  font-size: 0.88rem;
   font-weight: 700;
   padding: 2px 3px;
   cursor: pointer;
@@ -232,7 +261,7 @@ html, body {
 }
 
 .ym-divider {
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   color: var(--text-muted);
   user-select: none;
 }
@@ -257,13 +286,14 @@ html, body {
   color: var(--text-main);
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 3px 8px;
-  font-size: 0.78rem;
+  padding: 3px 7px;
+  font-size: 0.82rem;
   cursor: pointer;
   transition: all 0.15s ease;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
 }
 
 .icon-btn:hover,
@@ -289,16 +319,17 @@ html, body {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 4px;
+  padding: 0 3px;
 }
 
 .mini-label {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 input[type="range"] {
-  width: 54px;
+  width: 50px;
   height: 4px;
   accent-color: var(--accent-sky);
   cursor: pointer;
@@ -321,12 +352,12 @@ input[type="range"] {
 .month-hero-badge {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
 }
 
 .hero-month-num {
-  font-size: 2.5rem;
+  font-size: 2.75rem;
   font-weight: 800;
   line-height: 0.95;
   letter-spacing: -0.03em;
@@ -338,34 +369,35 @@ input[type="range"] {
 .hero-month-meta {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
 .hero-month-en {
-  font-size: 0.82rem;
+  font-size: 0.92rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   color: #e2e8f0;
 }
 
 .hero-month-lunar {
-  font-size: 0.74rem;
-  color: #94a3b8;
+  font-size: 0.84rem;
+  color: #cbd5e1;
 }
 
 .artwork-title-row {
   flex: 1;
-  max-width: 460px;
+  max-width: 480px;
 }
 
 .artwork-caption-input {
   width: 100%;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(15, 23, 42, 0.5);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 8px;
-  padding: 5px 11px;
+  padding: 5px 12px;
   color: #f1f5f9;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   text-align: right;
   outline: none;
   transition: all 0.2s ease;
@@ -406,12 +438,12 @@ input[type="range"] {
 /* ==================== 1. 月曆視圖 (下 1/3 緊湊高質感網格) ==================== */
 .month-grid-header {
   display: grid;
-  grid-template-columns: 76px repeat(7, minmax(0, 1fr));
-  height: 26px;
+  grid-template-columns: 82px repeat(7, minmax(0, 1fr));
+  height: 30px;
   background: rgba(30, 41, 59, 0.75);
   border-bottom: 1px solid var(--border-subtle);
   align-items: center;
-  font-size: 0.74rem;
+  font-size: 0.86rem;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -420,7 +452,7 @@ input[type="range"] {
   text-align: center;
   color: var(--accent-sky);
   border-right: 1px solid var(--border-subtle);
-  font-size: 0.7rem;
+  font-size: 0.78rem;
 }
 
 .weekday-header-cell {
@@ -442,7 +474,7 @@ input[type="range"] {
 .month-week-row {
   flex: 1;
   display: grid;
-  grid-template-columns: 76px repeat(7, minmax(0, 1fr));
+  grid-template-columns: 82px repeat(7, minmax(0, 1fr));
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   min-height: 0;
   transition: background 0.15s ease;
@@ -462,7 +494,7 @@ input[type="range"] {
   border: none;
   border-right: 1px solid var(--border-subtle);
   color: var(--accent-sky);
-  font-size: 0.73rem;
+  font-size: 0.84rem;
   font-weight: 700;
   cursor: pointer;
   display: flex;
@@ -481,9 +513,9 @@ input[type="range"] {
 }
 
 .week-menu-btn .week-sub {
-  font-size: 0.62rem;
-  font-weight: 400;
-  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .week-menu-btn:hover {
@@ -498,7 +530,7 @@ input[type="range"] {
 /* 月曆日期格 */
 .day-cell {
   border-right: 1px solid rgba(255, 255, 255, 0.06);
-  padding: 2px 6px;
+  padding: 3px 8px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -518,7 +550,7 @@ input[type="range"] {
 }
 
 .day-cell.other-month {
-  opacity: 0.32;
+  opacity: 0.35;
   background: rgba(0, 0, 0, 0.2);
 }
 
@@ -532,11 +564,11 @@ input[type="range"] {
   align-items: baseline;
   justify-content: space-between;
   gap: 4px;
-  line-height: 1.15;
+  line-height: 1.2;
 }
 
 .day-num {
-  font-size: 0.82rem;
+  font-size: 1.02rem;
   font-weight: 700;
   color: var(--text-main);
 }
@@ -547,44 +579,45 @@ input[type="range"] {
 }
 
 .day-tag {
-  font-size: 0.63rem;
+  font-size: 0.78rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 72%;
+  max-width: 75%;
   color: var(--text-secondary);
 }
 
 .day-tag.holiday-tag {
   color: var(--holiday-red);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .day-tag.workday-tag {
   color: var(--accent-amber);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .day-tag.solar-tag {
   color: var(--solar-term);
+  font-weight: 600;
 }
 
 .day-tag.lunar-tag {
-  color: rgba(148, 163, 184, 0.78);
+  color: rgba(203, 213, 225, 0.85);
 }
 
 /* 日期格底部：行程膠囊與待辦/備忘小點 */
 .day-cell-Previews {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   overflow: hidden;
-  min-height: 14px;
+  min-height: 16px;
 }
 
 .mini-event-pill {
-  font-size: 0.62rem;
-  padding: 0px 5px;
+  font-size: 0.74rem;
+  padding: 1px 6px;
   border-radius: 4px;
   white-space: nowrap;
   overflow: hidden;
