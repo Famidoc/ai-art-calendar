@@ -1,0 +1,149 @@
+{
+  "settings": {
+    "startOnMonday": false,
+    "opacity": 98,
+    "lastViewedYear": 2026,
+    "lastViewedMonth": 11
+  },
+  "monthArt": {
+    "2027-01": {
+      "customDataUrl": null,
+      "caption": "晨光破曉 · 迎向嶄新的 2027",
+      "posY": 50,
+      "fitMode": "contain"
+    },
+    "2027-02": {
+      "customDataUrl": null,
+      "caption": "春櫻漫舞 · 溫暖團圓時節",
+      "posY": 50,
+      "fitMode": "contain"
+    },
+    "2027-03": {
+      "customDataUrl": null,
+      "caption": "春風拂翠 · 萬物甦醒之詩",
+      "posY": 50,
+      "fitMode": "contain"
+    },
+    "2027-04": {
+      "customDataUrl": null,
+      "caption": "煙雨微醺 · 山林間的呼吸",
+      "posY": 50,
+      "fitMode": "cover"
+    },
+    "2027-05": {
+      "customDataUrl": null,
+      "caption": "初夏光影 · 迎風馳騁的公路",
+      "posY": 50,
+      "fitMode": "cover"
+    },
+    "2027-06": {
+      "customDataUrl": null,
+      "caption": "仲夏蔚藍 · 海岸線的微風",
+      "posY": 50,
+      "fitMode": "cover"
+    },
+    "2027-07": {
+      "customDataUrl": null,
+      "caption": "盛夏璀璨 · 星空下的奇想",
+      "posY": 50,
+      "fitMode": "contain"
+    },
+    "2027-08": {
+      "customDataUrl": null,
+      "caption": "流金歲月 · 午後的山城雲海",
+      "posY": 50,
+      "fitMode": "contain"
+    },
+    "2027-09": {
+      "customDataUrl": null,
+      "caption": "秋高氣爽 · 銀白月光與桂花香",
+      "posY": 50,
+      "fitMode": "contain"
+    },
+    "2027-10": {
+      "customDataUrl": null,
+      "caption": "楓紅層林 · 雙輪踏過的秋色",
+      "posY": 50,
+      "fitMode": "contain"
+    },
+    "2027-11": {
+      "customDataUrl": null,
+      "caption": "薄霧山嵐 · 靜謐深秋的思索",
+      "posY": 50,
+      "fitMode": "contain"
+    },
+    "2027-12": {
+      "customDataUrl": null,
+      "caption": "冬日暖陽 · 歲末星河的祝福",
+      "posY": 50,
+      "fitMode": "contain"
+    },
+    "2026-11": {
+      "customDataUrl": null,
+      "caption": "薄霧山嵐 · 靜謐深秋的思索",
+      "posY": 50,
+      "fitMode": "contain"
+    },
+    "2026-12": {
+      "customDataUrl": null,
+      "caption": "冬日暖陽 · 歲末星河的祝福",
+      "posY": 50,
+      "fitMode": "cover"
+    },
+    "2026-01": {
+      "customDataUrl": null,
+      "caption": "晨光破曉 · 迎向嶄新的 2026",
+      "posY": 50,
+      "fitMode": "cover"
+    }
+  },
+  "weekMemos": {},
+  "days": {
+    "2026-12-27": {
+      "schedules": [],
+      "todos": [],
+      "memo": ""
+    },
+    "2026-12-28": {
+      "schedules": [],
+      "todos": [],
+      "memo": ""
+    },
+    "2026-12-29": {
+      "schedules": [],
+      "todos": [],
+      "memo": ""
+    },
+    "2026-12-30": {
+      "schedules": [],
+      "todos": [],
+      "memo": ""
+    },
+    "2026-12-31": {
+      "schedules": [],
+      "todos": [],
+      "memo": ""
+    },
+    "2027-01-01": {
+      "schedules": [],
+      "todos": [],
+      "memo": "2027年元旦"
+    },
+    "2027-01-02": {
+      "schedules": [],
+      "todos": [],
+      "memo": ""
+    },
+    "2027-01-29": {
+      "schedules": [],
+      "todos": [],
+      "memo": ""
+    },
+    "2026-11-05": {
+      "schedules": [],
+      "todos": [],
+      "memo": "",
+      "customHoliday": null
+    }
+  }
+}
