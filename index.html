@@ -191,10 +191,14 @@
           <div class="day-card schedule-card">
             <div class="day-card-header">
               <h3>🕒 行事安排 <span id="schedule-count" class="count-badge">0</span></h3>
-              <span class="card-hint">同步顯示於月曆與週曆</span>
+              <span class="card-hint">同步顯示於月曆與週曆 · 點擊行程可編輯</span>
             </div>
             <form id="form-add-schedule" class="add-item-form">
-              <input id="sched-time-input" type="time" class="time-input" value="09:00" title="行程時間 (可留空代表全天)" />
+              <div class="time-range-group" title="設定開始時間與結束時間（結束時間可留空）">
+                <input id="sched-time-input" type="time" class="time-input" value="09:00" title="開始時間 (可留空代表全天)" />
+                <span class="time-range-sep">～</span>
+                <input id="sched-end-time-input" type="time" class="time-input" value="" title="結束時間 (選填，可留空)" />
+              </div>
               <input id="sched-text-input" type="text" class="text-input" placeholder="輸入行程、門診、會議或活動..." required />
               <div id="sched-color-picker" class="color-picker" title="選擇分類顏色">
                 <button type="button" class="color-dot active" data-color="sky" style="--dot-color: #38bdf8" title="工作/門診 (藍)"></button>
@@ -203,7 +207,8 @@
                 <button type="button" class="color-dot" data-color="amber" style="--dot-color: #fbbf24" title="靈感/創作 (金)"></button>
                 <button type="button" class="color-dot" data-color="violet" style="--dot-color: #a78bfa" title="休閒/家庭 (紫)"></button>
               </div>
-              <button type="submit" class="add-btn">＋ 新增</button>
+              <button id="btn-submit-schedule" type="submit" class="add-btn">＋ 新增</button>
+              <button id="btn-cancel-edit-schedule" type="button" class="cancel-edit-btn hidden" title="取消修改">取消</button>
             </form>
             <ul id="day-schedule-list" class="item-list"></ul>
           </div>

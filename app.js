@@ -336,6 +336,7 @@ const state = {
   currentWeekIndex: 0,      // 0 ~ weeks.length-1 within currentMonth
   currentDateStr: formatDateStr(INIT_YEAR, INIT_MONTH, nowInit.getDate()),
   selectedColor: 'sky',
+  editingScheduleId: null,  // 正在編輯中的行程 ID (null 代表新增模式)
   folderImages: {},         // 從 /api/images 掃描到的 { "2027-01": "/images/2027-01.png", ... }
   data: {
     settings: {
@@ -504,6 +505,66 @@ function ensureDayRecord(dateStr) {
     };
   }
   return state.data.days[dateStr];
+}
+
+function formatScheduleTimeLabel(item, fallback = '') {
+  const start = (item?.time || '').trim();
+  const end = (item?.endTime || '').trim();
+  if (start && end) return `${start}~${end}`;
+  if (start) return start;
+  if (end) return `~${end}`;
+  return fallback;
+}
+
+function setColorPickerSelection(colorName) {
+  const targetColor = colorName || 'sky';
+  state.selectedColor = targetColor;
+  document.querySelectorAll('#sched-color-picker .color-dot').forEach(b => {
+    b.classList.toggle('active', b.dataset.color === targetColor);
+  });
+}
+
+function startEditSchedule(item) {
+  if (!item) return;
+  state.editingScheduleId = item.id;
+  const startInput = document.getElementById('sched-time-input');
+  const endInput = document.getElementById('sched-end-time-input');
+  const textInput = document.getElementById('sched-text-input');
+  const submitBtn = document.getElementById('btn-submit-schedule');
+  const cancelBtn = document.getElementById('btn-cancel-edit-schedule');
+
+  if (startInput) startInput.value = item.time || '';
+  if (endInput) endInput.value = item.endTime || '';
+  if (textInput) textInput.value = item.text || '';
+  setColorPickerSelection(item.color || 'sky');
+
+  if (submitBtn) submitBtn.textContent = '✓ 儲存';
+  if (cancelBtn) cancelBtn.classList.remove('hidden');
+
+  renderDayView();
+  if (endInput && !item.endTime) {
+    endInput.focus();
+  } else if (textInput) {
+    textInput.focus();
+  }
+}
+
+function cancelEditSchedule(skipRender = false) {
+  state.editingScheduleId = null;
+  const startInput = document.getElementById('sched-time-input');
+  const endInput = document.getElementById('sched-end-time-input');
+  const textInput = document.getElementById('sched-text-input');
+  const submitBtn = document.getElementById('btn-submit-schedule');
+  const cancelBtn = document.getElementById('btn-cancel-edit-schedule');
+
+  if (startInput && !startInput.value) startInput.value = '09:00';
+  if (endInput) endInput.value = '';
+  if (textInput) textInput.value = '';
+  if (submitBtn) submitBtn.textContent = '＋ 新增';
+  if (cancelBtn) cancelBtn.classList.add('hidden');
+  if (!skipRender && state.currentView === 'day') {
+    renderDayView();
+  }
 }
 
 // ============================================================================
@@ -864,7 +925,8 @@ function renderMonthView() {
 
       if (schedules.length > 0) {
         const first = schedules[0];
-        const label = first.time ? `${first.time} ${first.text}` : first.text;
+        const tLabel = formatScheduleTimeLabel(first);
+        const label = tLabel ? `${tLabel} ${first.text}` : first.text;
         previewHtml += `<span class="mini-event-pill pill-${first.color || 'sky'}">${escapeHtml(label)}</span>`;
       }
 
@@ -973,7 +1035,8 @@ function renderWeekView() {
         dayRec.schedules.forEach(s => {
           const item = document.createElement('div');
           item.className = `week-sched-item pill-${s.color || 'sky'}`;
-          item.textContent = s.time ? `${s.time} ${s.text}` : s.text;
+          const tLabel = formatScheduleTimeLabel(s);
+          item.textContent = tLabel ? `${tLabel} ${s.text}` : s.text;
           body.appendChild(item);
         });
       }
@@ -1093,19 +1156,33 @@ function renderDayView() {
   const schedList = document.getElementById('day-schedule-list');
   schedList.innerHTML = '';
   if (dayRec.schedules.length === 0) {
-    schedList.innerHTML = `<li class="empty-hint">今日尚無排定行程，可於上方輸入時間與內容新增。</li>`;
+    schedList.innerHTML = `<li class="empty-hint">今日尚無排定行程，可於上方輸入開始與結束時間、內容後新增。</li>`;
   } else {
     dayRec.schedules.forEach((item) => {
       const li = document.createElement('li');
-      li.className = `list-item pill-${item.color || 'sky'}`;
+      const isEditing = state.editingScheduleId === item.id;
+      li.className = `list-item pill-${item.color || 'sky'} ${isEditing ? 'is-editing' : ''}`;
+      const timeBadgeText = formatScheduleTimeLabel(item, '全天');
       li.innerHTML = `
-        <div class="list-item-left">
-          <span class="sched-time-badge">${escapeHtml(item.time || '全天')}</span>
+        <div class="list-item-left sched-editable" title="點擊可修改此行程的開始/結束時間或內容">
+          <span class="sched-time-badge">${escapeHtml(timeBadgeText)}</span>
           <span class="item-text">${escapeHtml(item.text)}</span>
         </div>
-        <button type="button" class="delete-item-btn" title="刪除此行程">✕</button>
+        <div class="item-actions">
+          <button type="button" class="edit-item-btn" title="編輯此行程（設定結束時間或修改內容）">✎</button>
+          <button type="button" class="delete-item-btn" title="刪除此行程">✕</button>
+        </div>
       `;
+      li.querySelector('.sched-editable').addEventListener('click', () => {
+        startEditSchedule(item);
+      });
+      li.querySelector('.edit-item-btn').addEventListener('click', () => {
+        startEditSchedule(item);
+      });
       li.querySelector('.delete-item-btn').addEventListener('click', () => {
+        if (state.editingScheduleId === item.id) {
+          cancelEditSchedule(true);
+        }
         dayRec.schedules = dayRec.schedules.filter(s => s.id !== item.id);
         triggerAutoSave();
         renderDayView();
@@ -1186,6 +1263,9 @@ function openWeekView(year, month, weekIndex) {
 }
 
 function openDayView(dateStr) {
+  if (state.currentDateStr !== dateStr && state.editingScheduleId) {
+    cancelEditSchedule(true);
+  }
   state.currentDateStr = dateStr;
   const d = parseDateStr(dateStr);
   state.currentYear = d.getFullYear();
@@ -1571,25 +1651,52 @@ async function initApp() {
     });
   });
 
-  // 新增當日行程
+  // 新增或更新當日行程
   document.getElementById('form-add-schedule').addEventListener('submit', (e) => {
     e.preventDefault();
     const timeVal = document.getElementById('sched-time-input').value;
+    const endTimeInput = document.getElementById('sched-end-time-input');
+    const endTimeVal = endTimeInput ? endTimeInput.value : '';
     const textInput = document.getElementById('sched-text-input');
     const textVal = textInput.value.trim();
     if (!textVal) return;
 
     const dayRec = ensureDayRecord(state.currentDateStr);
-    dayRec.schedules.push({
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      time: timeVal || '',
-      text: textVal,
-      color: state.selectedColor
-    });
+    if (state.editingScheduleId) {
+      const target = dayRec.schedules.find(s => s.id === state.editingScheduleId);
+      if (target) {
+        target.time = timeVal || '';
+        target.endTime = endTimeVal || '';
+        target.text = textVal;
+        target.color = state.selectedColor;
+      } else {
+        dayRec.schedules.push({
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          time: timeVal || '',
+          endTime: endTimeVal || '',
+          text: textVal,
+          color: state.selectedColor
+        });
+      }
+      cancelEditSchedule(true);
+    } else {
+      dayRec.schedules.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        time: timeVal || '',
+        endTime: endTimeVal || '',
+        text: textVal,
+        color: state.selectedColor
+      });
+      textInput.value = '';
+      if (endTimeInput) endTimeInput.value = '';
+    }
     dayRec.schedules.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
-    textInput.value = '';
     triggerAutoSave();
     renderDayView();
+  });
+
+  document.getElementById('btn-cancel-edit-schedule')?.addEventListener('click', () => {
+    cancelEditSchedule();
   });
 
   // 新增待辦事項
