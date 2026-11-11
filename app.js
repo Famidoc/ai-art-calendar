@@ -501,10 +501,87 @@ function ensureDayRecord(dateStr) {
       schedules: [],
       todos: [],
       memo: '',
+      memoImages: [],
       customHoliday: null
     };
   }
+  if (!Array.isArray(state.data.days[dateStr].memoImages)) {
+    state.data.days[dateStr].memoImages = [];
+  }
   return state.data.days[dateStr];
+}
+
+function openMemoLightbox(imgSrc) {
+  if (!imgSrc) return;
+  const lb = document.getElementById('memo-img-lightbox');
+  const lbImg = document.getElementById('memo-lightbox-img');
+  if (lb && lbImg) {
+    lbImg.src = imgSrc;
+    lb.classList.remove('hidden');
+  }
+}
+
+function closeMemoLightbox() {
+  const lb = document.getElementById('memo-img-lightbox');
+  const lbImg = document.getElementById('memo-lightbox-img');
+  if (lb) lb.classList.add('hidden');
+  if (lbImg) lbImg.src = '';
+}
+
+function compressImageBlobToDataUrl(blob, maxDim = 1600) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read image'));
+    reader.onload = () => {
+      const rawDataUrl = reader.result;
+      const img = new Image();
+      img.onload = () => {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (w <= maxDim && h <= maxDim && blob.size <= 380 * 1024) {
+          resolve(rawDataUrl);
+          return;
+        }
+        const scale = Math.min(1, maxDim / Math.max(w, h));
+        const targetW = Math.max(1, Math.round(w * scale));
+        const targetH = Math.max(1, Math.round(h * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        const compressed = canvas.toDataURL('image/webp', 0.88);
+        resolve(compressed.startsWith('data:image/webp') ? compressed : canvas.toDataURL('image/jpeg', 0.88));
+      };
+      img.onerror = () => resolve(rawDataUrl);
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function addMemoImageFromBlob(blob, targetDateStr = state.currentDateStr) {
+  if (!blob || !blob.type?.startsWith('image/')) return false;
+  setSaveStatus('⏳ 正在處理貼上的圖片...');
+  try {
+    const dataUrl = await compressImageBlobToDataUrl(blob);
+    const dayRec = ensureDayRecord(targetDateStr);
+    dayRec.memoImages.push({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      dataUrl,
+      createdAt: new Date().toISOString()
+    });
+    triggerAutoSave();
+    if (state.currentView === 'day') renderDayView();
+    else if (state.currentView === 'week') renderWeekView();
+    else if (state.currentView === 'month') renderMonthView();
+    setSaveStatus('✓ 已貼上圖片至備忘錄');
+    return true;
+  } catch (err) {
+    console.warn('Add memo image failed:', err);
+    setSaveStatus('⚠️ 圖片處理失敗');
+    return false;
+  }
 }
 
 function formatScheduleTimeLabel(item, fallback = '') {
@@ -743,6 +820,9 @@ function triggerAutoSave() {
         ...state.data,
         monthArt: Object.fromEntries(
           Object.entries(state.data.monthArt).map(([k, v]) => [k, { ...v, customDataUrl: null }])
+        ),
+        days: Object.fromEntries(
+          Object.entries(state.data.days).map(([k, v]) => [k, { ...v, memoImages: [] }])
         )
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(lightCopy));
@@ -921,7 +1001,8 @@ function renderMonthView() {
       let previewHtml = '';
       const schedules = dayRec?.schedules || [];
       const todos = dayRec?.todos || [];
-      const hasMemo = Boolean(dayRec?.memo && dayRec.memo.trim().length > 0);
+      const memoImgsCount = dayRec?.memoImages?.length || 0;
+      const hasMemo = Boolean((dayRec?.memo && dayRec.memo.trim().length > 0) || memoImgsCount > 0);
 
       if (schedules.length > 0) {
         const first = schedules[0];
@@ -939,7 +1020,8 @@ function renderMonthView() {
         indicators.push(`<span class="ind-dot" title="待辦事項 ${doneCount}/${todos.length}">☑${doneCount}/${todos.length}</span>`);
       }
       if (hasMemo) {
-        indicators.push(`<span class="ind-dot" title="有填寫隨筆備忘">📝</span>`);
+        const memoTitle = memoImgsCount > 0 ? `有隨筆備忘（含 ${memoImgsCount} 張圖片）` : '有填寫隨筆備忘';
+        indicators.push(`<span class="ind-dot" title="${memoTitle}">${memoImgsCount > 0 ? '🖼️' : '📝'}</span>`);
       }
 
       cell.innerHTML = `
@@ -1023,7 +1105,10 @@ function renderWeekView() {
     const body = document.createElement('div');
     body.className = 'week-day-body';
 
-    if (dayRec.schedules.length === 0 && dayRec.todos.length === 0 && !dayRec.memo.trim()) {
+    const hasMemoText = Boolean(dayRec.memo && dayRec.memo.trim());
+    const hasMemoImgs = Boolean(dayRec.memoImages && dayRec.memoImages.length > 0);
+
+    if (dayRec.schedules.length === 0 && dayRec.todos.length === 0 && !hasMemoText && !hasMemoImgs) {
       body.innerHTML = `<div class="empty-hint">尚無記事<br/>點擊下方按鈕新增</div>`;
     } else {
       if (dayRec.schedules.length > 0) {
@@ -1063,7 +1148,7 @@ function renderWeekView() {
         });
       }
 
-      if (dayRec.memo && dayRec.memo.trim()) {
+      if (hasMemoText || hasMemoImgs) {
         const mLabel = document.createElement('div');
         mLabel.className = 'week-section-label';
         mLabel.textContent = '📝 備忘';
@@ -1071,7 +1156,28 @@ function renderWeekView() {
 
         const memoDiv = document.createElement('div');
         memoDiv.className = 'week-memo-preview';
-        memoDiv.textContent = dayRec.memo.trim();
+        if (hasMemoText) {
+          const txtEl = document.createElement('div');
+          txtEl.textContent = dayRec.memo.trim();
+          memoDiv.appendChild(txtEl);
+        }
+        if (hasMemoImgs) {
+          const imgWrap = document.createElement('div');
+          imgWrap.className = 'week-memo-imgs';
+          dayRec.memoImages.forEach((imgObj) => {
+            const thumb = document.createElement('img');
+            thumb.className = 'week-memo-img-thumb';
+            thumb.src = imgObj.dataUrl;
+            thumb.alt = '備忘圖片';
+            thumb.title = '點擊放大檢視備忘圖片';
+            thumb.addEventListener('click', (e) => {
+              e.stopPropagation();
+              openMemoLightbox(imgObj.dataUrl);
+            });
+            imgWrap.appendChild(thumb);
+          });
+          memoDiv.appendChild(imgWrap);
+        }
         body.appendChild(memoDiv);
       }
     }
@@ -1191,7 +1297,7 @@ function renderDayView() {
     });
   }
 
-  // 2. 渲染待辦事項 (To-Dos)
+  // 2. 渲染待辦事項 (To-Dos - 支援拖曳排序)
   const doneCount = dayRec.todos.filter(t => t.done).length;
   document.getElementById('todo-count').textContent = `${doneCount}/${dayRec.todos.length}`;
   const todoList = document.getElementById('day-todo-list');
@@ -1201,14 +1307,29 @@ function renderDayView() {
   } else {
     dayRec.todos.forEach((item) => {
       const li = document.createElement('li');
-      li.className = `list-item ${item.done ? 'done' : ''}`;
+      li.className = `list-item todo-sortable-item ${item.done ? 'done' : ''}`;
+      li.draggable = true;
+      li.dataset.todoId = item.id;
       li.innerHTML = `
-        <label class="list-item-left" style="cursor:pointer;">
-          <input type="checkbox" class="todo-checkbox" ${item.done ? 'checked' : ''} />
-          <span class="item-text">${escapeHtml(item.text)}</span>
-        </label>
+        <div class="list-item-left">
+          <span class="todo-drag-handle" title="按住上下拖曳可調整順序">⠿</span>
+          <label class="list-item-left" style="cursor:pointer;">
+            <input type="checkbox" class="todo-checkbox" ${item.done ? 'checked' : ''} />
+            <span class="item-text">${escapeHtml(item.text)}</span>
+          </label>
+        </div>
         <button type="button" class="delete-item-btn" title="刪除此待辦">✕</button>
       `;
+      li.addEventListener('dragstart', (e) => {
+        e.stopPropagation();
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', item.id);
+        requestAnimationFrame(() => li.classList.add('is-dragging'));
+      });
+      li.addEventListener('dragend', () => {
+        li.classList.remove('is-dragging');
+        syncTodoOrderFromDOM(dayRec, todoList);
+      });
       li.querySelector('.todo-checkbox').addEventListener('change', (e) => {
         item.done = e.target.checked;
         triggerAutoSave();
@@ -1223,10 +1344,72 @@ function renderDayView() {
     });
   }
 
-  // 3. 渲染自由備忘錄 (Memo)
+  // 3. 渲染自由備忘錄與貼圖 (Memo & Pasted Images)
   const memoEl = document.getElementById('day-memo-textarea');
   if (document.activeElement !== memoEl) {
     memoEl.value = dayRec.memo || '';
+  }
+
+  const memoImgs = dayRec.memoImages || [];
+  const memoImgCountBadge = document.getElementById('memo-img-count');
+  if (memoImgCountBadge) {
+    memoImgCountBadge.textContent = `${memoImgs.length} 圖`;
+    memoImgCountBadge.classList.toggle('hidden', memoImgs.length === 0);
+  }
+
+  const memoImgsGrid = document.getElementById('day-memo-images');
+  if (memoImgsGrid) {
+    memoImgsGrid.innerHTML = '';
+    memoImgsGrid.classList.toggle('hidden', memoImgs.length === 0);
+    memoImgs.forEach((imgObj) => {
+      const card = document.createElement('div');
+      card.className = 'memo-img-item';
+      card.title = '點擊放大檢視圖片';
+      card.innerHTML = `
+        <img class="memo-img-thumb" src="${imgObj.dataUrl}" alt="備忘錄貼圖" />
+        <button type="button" class="memo-img-del-btn" title="移除此張圖片">✕</button>
+      `;
+      card.querySelector('.memo-img-thumb').addEventListener('click', () => {
+        openMemoLightbox(imgObj.dataUrl);
+      });
+      card.querySelector('.memo-img-del-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        dayRec.memoImages = dayRec.memoImages.filter(img => img.id !== imgObj.id);
+        triggerAutoSave();
+        renderDayView();
+        setSaveStatus('✓ 已移除備忘錄圖片');
+      });
+      memoImgsGrid.appendChild(card);
+    });
+  }
+}
+
+function getTodoDragAfterElement(container, y) {
+  const draggableElements = [...container.querySelectorAll('.todo-sortable-item:not(.is-dragging)')];
+  return draggableElements.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, element: child };
+    }
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+}
+
+function syncTodoOrderFromDOM(dayRec, todoList) {
+  if (!dayRec || !todoList) return;
+  const domIds = [...todoList.querySelectorAll('.todo-sortable-item')].map(el => el.dataset.todoId);
+  if (domIds.length !== dayRec.todos.length) return;
+  const prevOrder = dayRec.todos.map(t => t.id).join(',');
+  const nextOrder = domIds.join(',');
+  if (prevOrder === nextOrder) return;
+
+  const mapById = new Map(dayRec.todos.map(t => [t.id, t]));
+  const reordered = domIds.map(id => mapById.get(id)).filter(Boolean);
+  if (reordered.length === dayRec.todos.length) {
+    dayRec.todos = reordered;
+    triggerAutoSave();
+    setSaveStatus('✓ 已更新待辦事項順序');
   }
 }
 
@@ -1717,11 +1900,132 @@ async function initApp() {
     renderDayView();
   });
 
-  // 備忘錄即時自動存檔
-  document.getElementById('day-memo-textarea').addEventListener('input', (e) => {
+  // 待辦事項清單拖曳排序 (Drag & Drop Sorting)
+  const dayTodoList = document.getElementById('day-todo-list');
+  if (dayTodoList) {
+    dayTodoList.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      const draggingEl = dayTodoList.querySelector('.todo-sortable-item.is-dragging');
+      if (!draggingEl) return;
+      const afterElement = getTodoDragAfterElement(dayTodoList, e.clientY);
+      if (!afterElement) {
+        dayTodoList.appendChild(draggingEl);
+      } else if (afterElement !== draggingEl) {
+        dayTodoList.insertBefore(draggingEl, afterElement);
+      }
+    });
+
+    dayTodoList.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const dayRec = ensureDayRecord(state.currentDateStr);
+      syncTodoOrderFromDOM(dayRec, dayTodoList);
+    });
+  }
+
+  // 備忘錄即時自動存檔與貼上截圖/圖片支援
+  const dayMemoTextarea = document.getElementById('day-memo-textarea');
+  dayMemoTextarea.addEventListener('input', (e) => {
     const dayRec = ensureDayRecord(state.currentDateStr);
     dayRec.memo = e.target.value;
     triggerAutoSave();
+  });
+
+  // 在日曆視圖中支援直接按 Ctrl+V 貼上截圖或複製的圖片
+  document.addEventListener('paste', async (e) => {
+    if (state.currentView !== 'day') return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageBlobs = [];
+    for (const item of items) {
+      if (item.type && item.type.startsWith('image/')) {
+        const blob = item.getAsFile();
+        if (blob) imageBlobs.push(blob);
+      }
+    }
+    if (imageBlobs.length > 0) {
+      e.preventDefault();
+      for (const blob of imageBlobs) {
+        await addMemoImageFromBlob(blob, state.currentDateStr);
+      }
+    }
+  });
+
+  // 點擊「📋 貼圖」按鈕從系統剪貼簿讀取圖片
+  document.getElementById('btn-paste-memo-img')?.addEventListener('click', async () => {
+    if (navigator.clipboard?.read) {
+      try {
+        const clipItems = await navigator.clipboard.read();
+        let foundImage = false;
+        for (const clipItem of clipItems) {
+          const imgType = clipItem.types.find(t => t.startsWith('image/'));
+          if (imgType) {
+            const blob = await clipItem.getType(imgType);
+            if (blob) {
+              await addMemoImageFromBlob(blob, state.currentDateStr);
+              foundImage = true;
+            }
+          }
+        }
+        if (foundImage) return;
+        alert('目前剪貼簿中沒有圖片或截圖。\n您可以先按 Win + Shift + S 截圖，再點此按鈕或直接按 Ctrl + V 貼上！');
+        return;
+      } catch (_) {}
+    }
+    dayMemoTextarea.focus();
+    setSaveStatus('💡 請直接按 Ctrl+V 貼上剪貼簿截圖');
+  });
+
+  // 點擊「🖼️ 加圖」按鈕選擇圖檔加入備忘錄
+  const fileUploadMemoImg = document.getElementById('file-upload-memo-img');
+  document.getElementById('btn-upload-memo-img')?.addEventListener('click', () => {
+    if (!fileUploadMemoImg) return;
+    fileUploadMemoImg.value = '';
+    fileUploadMemoImg.click();
+  });
+  fileUploadMemoImg?.addEventListener('change', async (e) => {
+    const files = [...(e.target.files || [])];
+    for (const f of files) {
+      await addMemoImageFromBlob(f, state.currentDateStr);
+    }
+  });
+
+  // 支援將圖片直接拖曳至「註記與隨筆備忘」卡片中
+  const dayMemoCard = document.getElementById('day-memo-card');
+  const dayMemoBox = document.getElementById('day-memo-box');
+  if (dayMemoCard && dayMemoBox) {
+    dayMemoCard.addEventListener('dragover', (e) => {
+      if (e.dataTransfer?.types?.includes('Files')) {
+        e.preventDefault();
+        e.stopPropagation();
+        dayMemoBox.classList.add('drag-over');
+      }
+    });
+    dayMemoCard.addEventListener('dragleave', (e) => {
+      if (!dayMemoCard.contains(e.relatedTarget)) {
+        dayMemoBox.classList.remove('drag-over');
+      }
+    });
+    dayMemoCard.addEventListener('drop', async (e) => {
+      dayMemoBox.classList.remove('drag-over');
+      const files = [...(e.dataTransfer?.files || [])].filter(f => f.type.startsWith('image/'));
+      if (files.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        for (const f of files) {
+          await addMemoImageFromBlob(f, state.currentDateStr);
+        }
+      }
+    });
+  }
+
+  // 備忘錄圖片放大檢視燈箱 (Lightbox) 關閉控制
+  document.getElementById('btn-close-lightbox')?.addEventListener('click', closeMemoLightbox);
+  document.querySelector('#memo-img-lightbox .memo-lightbox-backdrop')?.addEventListener('click', closeMemoLightbox);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMemoLightbox();
   });
 
   // 字級縮放控制 (A- / A+，自動記憶並針對網頁/PWA版最佳化預設大小)

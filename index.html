@@ -217,7 +217,7 @@
           <div class="day-card todo-card">
             <div class="day-card-header">
               <h3>☑️ 待辦事項 <span id="todo-count" class="count-badge">0/0</span></h3>
-              <span class="card-hint">可勾選完成狀態</span>
+              <span class="card-hint">可勾選完成 · 按住拖曳排序</span>
             </div>
             <form id="form-add-todo" class="add-item-form">
               <input id="todo-text-input" type="text" class="text-input" placeholder="新增今日待辦事項，按 Enter 新增..." required />
@@ -227,21 +227,38 @@
           </div>
 
           <!-- 分區三：自由備忘錄 / 隨筆 (Memo & Notes) -->
-          <div class="day-card memo-card">
+          <div id="day-memo-card" class="day-card memo-card">
             <div class="day-card-header">
-              <h3>📝 註記與隨筆備忘</h3>
-              <span class="card-hint">即時自動儲存</span>
+              <h3>📝 註記與隨筆備忘 <span id="memo-img-count" class="count-badge hidden">0 圖</span></h3>
+              <div class="memo-header-actions">
+                <button id="btn-paste-memo-img" type="button" class="pill-btn memo-action-btn" title="從剪貼簿貼上截圖或圖片 (亦可直接按 Ctrl+V)">📋 貼圖</button>
+                <button id="btn-upload-memo-img" type="button" class="pill-btn memo-action-btn" title="選擇圖片或截圖檔案加入備忘">🖼️ 加圖</button>
+                <span class="card-hint">支援 Ctrl+V 貼上截圖</span>
+              </div>
             </div>
-            <textarea
-              id="day-memo-textarea"
-              class="memo-textarea"
-              placeholder="在此自由填寫當日註記、備忘、單車日記、AI 繪圖靈感或心情隨筆..."
-            ></textarea>
+            <div id="day-memo-box" class="memo-body-box">
+              <textarea
+                id="day-memo-textarea"
+                class="memo-textarea"
+                placeholder="在此自由填寫當日註記、備忘、單車日記、AI 繪圖靈感或心情隨筆...（可直接按 Ctrl+V 貼上截圖或拖曳圖片至此）"
+              ></textarea>
+              <div id="day-memo-images" class="memo-images-grid hidden"></div>
+            </div>
+            <input id="file-upload-memo-img" type="file" accept="image/*" multiple class="hidden" />
           </div>
         </div>
       </div>
 
     </main>
+
+    <!-- 備忘錄圖片放大檢視燈箱 (Lightbox) -->
+    <div id="memo-img-lightbox" class="memo-lightbox hidden">
+      <div class="memo-lightbox-backdrop"></div>
+      <div class="memo-lightbox-content">
+        <img id="memo-lightbox-img" src="" alt="備忘錄圖片預覽" />
+        <button id="btn-close-lightbox" type="button" class="memo-lightbox-close" title="關閉預覽 (Esc)">✕</button>
+      </div>
+    </div>
   </div>
 
   <script src="app.js" type="module"></script>

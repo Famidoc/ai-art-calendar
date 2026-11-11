@@ -1163,6 +1163,44 @@ input[type="range"] {
   line-height: 1.35;
 }
 
+.todo-sortable-item {
+  transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+  cursor: grab;
+}
+
+.todo-sortable-item:active {
+  cursor: grabbing;
+}
+
+.todo-sortable-item:hover {
+  border-color: rgba(56, 189, 248, 0.32);
+  background: rgba(30, 41, 59, 0.78);
+}
+
+.todo-sortable-item.is-dragging {
+  opacity: 0.48;
+  border: 1px dashed var(--accent-sky);
+  background: rgba(56, 189, 248, 0.16);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+.todo-drag-handle {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: grab;
+  padding: 2px 3px;
+  border-radius: 4px;
+  user-select: none;
+  flex-shrink: 0;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.todo-sortable-item:hover .todo-drag-handle {
+  color: var(--accent-sky);
+  background: rgba(56, 189, 248, 0.12);
+}
+
 .todo-checkbox {
   width: 16px;
   height: 16px;
@@ -1211,14 +1249,48 @@ input[type="range"] {
   margin-top: 22px;
 }
 
-/* 自由備忘錄文字框 */
-.memo-textarea {
+/* 自由備忘錄區塊 (支援文字與貼上截圖/圖片) */
+.memo-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.memo-action-btn {
+  font-size: 0.72rem;
+  padding: 2px 7px;
+}
+
+.memo-body-box {
   flex: 1;
-  width: 100%;
-  resize: none;
+  display: flex;
+  flex-direction: column;
   background: rgba(15, 23, 42, 0.75);
   border: 1px solid var(--border-subtle);
   border-radius: 9px;
+  overflow: hidden;
+  min-height: 0;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.memo-body-box:focus-within {
+  border-color: var(--accent-sky);
+}
+
+.memo-body-box.drag-over {
+  border-color: var(--accent-sky);
+  border-style: dashed;
+  background: rgba(56, 189, 248, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.35);
+}
+
+.memo-textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 72px;
+  resize: none;
+  background: transparent;
+  border: none;
   padding: 10px 12px;
   color: var(--text-main);
   font-family: inherit;
@@ -1226,6 +1298,145 @@ input[type="range"] {
   line-height: 1.6;
   outline: none;
   user-select: text;
+}
+
+.memo-images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(9, 13, 22, 0.45);
+  max-height: 48%;
+  overflow-y: auto;
+}
+
+.memo-img-item {
+  position: relative;
+  border-radius: 7px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #090d16;
+  aspect-ratio: 16 / 10;
+  cursor: zoom-in;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.memo-img-item:hover {
+  border-color: var(--accent-sky);
+  transform: translateY(-1px);
+}
+
+.memo-img-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.memo-img-del-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(15, 23, 42, 0.82);
+  color: #f8fafc;
+  font-size: 0.72rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.memo-img-item:hover .memo-img-del-btn {
+  opacity: 1;
+}
+
+.memo-img-del-btn:hover {
+  background: rgba(244, 63, 94, 0.92);
+}
+
+.week-memo-imgs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.week-memo-img-thumb {
+  width: 44px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: zoom-in;
+}
+
+/* 備忘錄圖片放大檢視燈箱 (Lightbox) */
+.memo-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.memo-lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(9, 13, 22, 0.86);
+  backdrop-filter: blur(8px);
+}
+
+.memo-lightbox-content {
+  position: relative;
+  z-index: 1;
+  max-width: 92vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.memo-lightbox-content img {
+  max-width: 92vw;
+  max-height: 88vh;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85);
+}
+
+.memo-lightbox-close {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.memo-lightbox-close:hover {
+  background: rgba(244, 63, 94, 0.9);
+  transform: scale(1.08);
 }
 
 /* 捲軸美化 */
