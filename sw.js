@@ -1,7 +1,7 @@
 // ============================================================================
 // AI 繪圖萬年桌面月曆 — PWA Service Worker (支援離線啟動與靜態資源快取)
 // ============================================================================
-const CACHE_NAME = 'art-calendar-pwa-v10';
+const CACHE_NAME = 'art-calendar-pwa-v11';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -32,6 +32,11 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+
+  // 外部跨網域請求 (例如 Google Apps Script 雲端同步 API) 一律直接放行，不經由 Service Worker 攔截
+  if (url.origin !== self.location.origin) {
+    return;
+  }
 
   // 本機 API 請求 (/api/*) 走網路優先，失敗時直接略過讓前端自動降級使用 IndexedDB
   if (url.pathname.startsWith('/api/')) {

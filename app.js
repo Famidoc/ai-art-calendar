@@ -655,6 +655,7 @@ const IDB_KEY = 'universal_calendar_data';
 const CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbw52alTyL-zPAYH6GKJHb3vED2smOanSX7W2BdiRdRQWJgvv0nrvIe9MLKdyHsJueqD/exec';
 let saveTimer = null;
 let cloudSyncInFlight = false;
+let pendingCloudSyncOptions = null;
 let lastCloudPullTime = 0;
 const pendingCloudReplaceDates = new Set();
 
@@ -886,7 +887,14 @@ async function persistLocalStateOnly() {
  * 與 Google Apps Script 雲端試算表雙向同步 (支援手機 Gemini Skill 寫入與跨裝置同步)
  */
 async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
-  if (!CLOUD_SYNC_URL || cloudSyncInFlight) return false;
+  if (!CLOUD_SYNC_URL) return false;
+  if (cloudSyncInFlight) {
+    pendingCloudSyncOptions = {
+      pushLocal: Boolean(pendingCloudSyncOptions?.pushLocal || pushLocal),
+      quiet: Boolean((pendingCloudSyncOptions ? pendingCloudSyncOptions.quiet : true) && quiet)
+    };
+    return false;
+  }
   cloudSyncInFlight = true;
   if (!quiet) setSaveStatus('☁️ 雲端同步中...');
 
@@ -909,7 +917,7 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
           todos: dVal.todos || [],
           memo: dVal.memo || '',
           customHoliday: dVal.customHoliday || null,
-          updatedAt: Number(dVal.updatedAt) || 0
+          updatedAt: Number(dVal.updatedAt) || Date.now()
         };
       }
 
@@ -948,13 +956,18 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
       if (state.currentView === 'month') renderMonthView();
       else if (state.currentView === 'week') renderWeekView();
       else if (state.currentView === 'day') renderDayView();
-      if (!quiet) setSaveStatus('☁️ 已雲端同步');
+      setSaveStatus('☁️ 已雲端同步');
       return true;
     }
   } catch (err) {
     console.warn('Cloud sync skipped:', err);
   } finally {
     cloudSyncInFlight = false;
+    if (pendingCloudSyncOptions) {
+      const nextOpts = pendingCloudSyncOptions;
+      pendingCloudSyncOptions = null;
+      syncWithCloud(nextOpts);
+    }
   }
   return false;
 }
