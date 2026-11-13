@@ -652,7 +652,18 @@ const LEGACY_STORAGE_KEY = 'antigravity_calendar_2027_v1';
 const IDB_NAME = 'ArtCalendarUniversalDB';
 const IDB_STORE = 'appStateStore';
 const IDB_KEY = 'universal_calendar_data';
+const CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbw52alTyL-zPAYH6GKJHb3vED2smOanSX7W2BdiRdRQWJgvv0nrvIe9MLKdyHsJueqD/exec';
 let saveTimer = null;
+let cloudSyncInFlight = false;
+let lastCloudPullTime = 0;
+const pendingCloudReplaceDates = new Set();
+
+function markDayUpdated(dateStr = state.currentDateStr) {
+  if (!dateStr) return;
+  const rec = ensureDayRecord(dateStr);
+  rec.updatedAt = Date.now();
+  pendingCloudReplaceDates.add(dateStr);
+}
 
 function openCalendarDB() {
   return new Promise((resolve, reject) => {
@@ -801,12 +812,155 @@ function mergeLoadedData(incoming) {
   if (incoming.weekMemos) {
     state.data.weekMemos = { ...state.data.weekMemos, ...incoming.weekMemos };
   }
-  if (incoming.days) {
-    state.data.days = { ...state.data.days, ...incoming.days };
+  if (incoming.days && typeof incoming.days === 'object') {
+    for (const [dateStr, inDay] of Object.entries(incoming.days)) {
+      if (!inDay || typeof inDay !== 'object') continue;
+      const curDay = state.data.days[dateStr];
+      if (!curDay) {
+        state.data.days[dateStr] = {
+          schedules: Array.isArray(inDay.schedules) ? inDay.schedules : [],
+          todos: Array.isArray(inDay.todos) ? inDay.todos : [],
+          memo: String(inDay.memo ?? ''),
+          memoImages: Array.isArray(inDay.memoImages) ? inDay.memoImages : [],
+          customHoliday: inDay.customHoliday || null,
+          updatedAt: Number(inDay.updatedAt) || 0
+        };
+      } else {
+        const curTime = Number(curDay.updatedAt) || 0;
+        const inTime = Number(inDay.updatedAt) || 0;
+        const preservedImages = (Array.isArray(inDay.memoImages) && inDay.memoImages.length > 0)
+          ? inDay.memoImages
+          : (Array.isArray(curDay.memoImages) ? curDay.memoImages : []);
+
+        if (inTime > curTime) {
+          state.data.days[dateStr] = {
+            schedules: Array.isArray(inDay.schedules) ? inDay.schedules : [],
+            todos: Array.isArray(inDay.todos) ? inDay.todos : [],
+            memo: String(inDay.memo ?? ''),
+            memoImages: preservedImages,
+            customHoliday: inDay.customHoliday ?? curDay.customHoliday ?? null,
+            updatedAt: inTime
+          };
+        } else if (curTime === 0 && inTime === 0) {
+          state.data.days[dateStr] = {
+            ...curDay,
+            ...inDay,
+            memoImages: preservedImages
+          };
+        } else {
+          curDay.memoImages = preservedImages;
+        }
+      }
+    }
   }
 }
 
-function triggerAutoSave() {
+async function persistLocalStateOnly() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+  } catch (_) {
+    try {
+      const lightCopy = {
+        ...state.data,
+        monthArt: Object.fromEntries(
+          Object.entries(state.data.monthArt).map(([k, v]) => [k, { ...v, customDataUrl: null }])
+        ),
+        days: Object.fromEntries(
+          Object.entries(state.data.days).map(([k, v]) => [k, { ...v, memoImages: [] }])
+        )
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(lightCopy));
+    } catch (_) {}
+  }
+  await idbSetData(state.data);
+  try {
+    await fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state.data)
+    });
+  } catch (_) {}
+}
+
+/**
+ * 與 Google Apps Script 雲端試算表雙向同步 (支援手機 Gemini Skill 寫入與跨裝置同步)
+ */
+async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
+  if (!CLOUD_SYNC_URL || cloudSyncInFlight) return false;
+  cloudSyncInFlight = true;
+  if (!quiet) setSaveStatus('☁️ 雲端同步中...');
+
+  try {
+    let cloudPayload = null;
+    if (pushLocal) {
+      // 準備不含大型 Base64 圖片的輕量 days 結構上傳同步
+      const lightDays = {};
+      for (const [dKey, dVal] of Object.entries(state.data.days || {})) {
+        if (!dVal) continue;
+        const hasData =
+          (Array.isArray(dVal.schedules) && dVal.schedules.length > 0) ||
+          (Array.isArray(dVal.todos) && dVal.todos.length > 0) ||
+          Boolean(dVal.memo && String(dVal.memo).trim()) ||
+          Boolean(dVal.customHoliday) ||
+          pendingCloudReplaceDates.has(dKey);
+        if (!hasData) continue;
+        lightDays[dKey] = {
+          schedules: dVal.schedules || [],
+          todos: dVal.todos || [],
+          memo: dVal.memo || '',
+          customHoliday: dVal.customHoliday || null,
+          updatedAt: Number(dVal.updatedAt) || 0
+        };
+      }
+
+      const replaceDates = [...pendingCloudReplaceDates];
+      pendingCloudReplaceDates.clear();
+
+      const res = await fetch(CLOUD_SYNC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'sync_batch',
+          days: lightDays,
+          weekMemos: state.data.weekMemos || {},
+          replaceDates
+        })
+      });
+      if (res.ok) {
+        cloudPayload = await res.json();
+      }
+    } else {
+      const res = await fetch(`${CLOUD_SYNC_URL}?action=sync&t=${Date.now()}`);
+      if (res.ok) {
+        cloudPayload = await res.json();
+      }
+    }
+
+    if (cloudPayload && cloudPayload.ok) {
+      lastCloudPullTime = Date.now();
+      mergeLoadedData({
+        days: cloudPayload.days || {},
+        weekMemos: cloudPayload.weekMemos || {}
+      });
+      await persistLocalStateOnly();
+      if (state.currentView === 'month') renderMonthView();
+      else if (state.currentView === 'week') renderWeekView();
+      else if (state.currentView === 'day') renderDayView();
+      if (!quiet) setSaveStatus('☁️ 已雲端同步');
+      return true;
+    }
+  } catch (err) {
+    console.warn('Cloud sync skipped:', err);
+  } finally {
+    cloudSyncInFlight = false;
+  }
+  return false;
+}
+
+function triggerAutoSave(changedDateStr = null) {
+  if (changedDateStr && typeof changedDateStr === 'string') {
+    markDayUpdated(changedDateStr);
+  }
   setSaveStatus('⏳ 儲存中...');
   state.data.settings.lastViewedYear = state.currentYear;
   state.data.settings.lastViewedMonth = state.currentMonth;
@@ -834,7 +988,8 @@ function triggerAutoSave() {
     // 2. 寫入大容量 IndexedDB (PWA 與跨年份高畫質圖片主力儲存)
     await idbSetData(state.data);
 
-    // 3. 若有啟動本機 server.mjs，同步寫入硬碟 data/calendar-2027.json
+    // 3. 若有啟動本機 server.mjs，同步寫入硬碟 data/calendar-data.json
+    let savedToServer = false;
     try {
       const res = await fetch('/api/data', {
         method: 'POST',
@@ -842,12 +997,20 @@ function triggerAutoSave() {
         body: JSON.stringify(state.data)
       });
       if (res.ok) {
-        setSaveStatus('✓ 已自動存檔');
-        return;
+        savedToServer = true;
       }
     } catch (_) {}
-    setSaveStatus('✓ 已存於裝置');
-  }, 280);
+
+    // 4. 同步推送至 Google 雲端試算表 (GAS)
+    const syncedCloud = await syncWithCloud({ pushLocal: true, quiet: true });
+    if (syncedCloud) {
+      setSaveStatus('☁️ 已雲端同步');
+    } else if (savedToServer) {
+      setSaveStatus('✓ 已自動存檔');
+    } else {
+      setSaveStatus('✓ 已存於裝置');
+    }
+  }, 350);
 }
 
 // ============================================================================
@@ -1290,7 +1453,7 @@ function renderDayView() {
           cancelEditSchedule(true);
         }
         dayRec.schedules = dayRec.schedules.filter(s => s.id !== item.id);
-        triggerAutoSave();
+        triggerAutoSave(state.currentDateStr);
         renderDayView();
       });
       schedList.appendChild(li);
@@ -1332,12 +1495,12 @@ function renderDayView() {
       });
       li.querySelector('.todo-checkbox').addEventListener('change', (e) => {
         item.done = e.target.checked;
-        triggerAutoSave();
+        triggerAutoSave(state.currentDateStr);
         renderDayView();
       });
       li.querySelector('.delete-item-btn').addEventListener('click', () => {
         dayRec.todos = dayRec.todos.filter(t => t.id !== item.id);
-        triggerAutoSave();
+        triggerAutoSave(state.currentDateStr);
         renderDayView();
       });
       todoList.appendChild(li);
@@ -1408,7 +1571,7 @@ function syncTodoOrderFromDOM(dayRec, todoList) {
   const reordered = domIds.map(id => mapById.get(id)).filter(Boolean);
   if (reordered.length === dayRec.todos.length) {
     dayRec.todos = reordered;
-    triggerAutoSave();
+    triggerAutoSave(state.currentDateStr);
     setSaveStatus('✓ 已更新待辦事項順序');
   }
 }
@@ -1821,7 +1984,7 @@ async function initApp() {
     } else {
       dayRec.customHoliday = null;
     }
-    triggerAutoSave();
+    triggerAutoSave(state.currentDateStr);
     renderDayView();
   });
 
@@ -1874,7 +2037,7 @@ async function initApp() {
       if (endTimeInput) endTimeInput.value = '';
     }
     dayRec.schedules.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
-    triggerAutoSave();
+    triggerAutoSave(state.currentDateStr);
     renderDayView();
   });
 
@@ -1896,7 +2059,7 @@ async function initApp() {
       done: false
     });
     textInput.value = '';
-    triggerAutoSave();
+    triggerAutoSave(state.currentDateStr);
     renderDayView();
   });
 
@@ -1930,7 +2093,7 @@ async function initApp() {
   dayMemoTextarea.addEventListener('input', (e) => {
     const dayRec = ensureDayRecord(state.currentDateStr);
     dayRec.memo = e.target.value;
-    triggerAutoSave();
+    triggerAutoSave(state.currentDateStr);
   });
 
   // 在日曆視圖中支援直接按 Ctrl+V 貼上截圖或複製的圖片
@@ -2083,8 +2246,35 @@ async function initApp() {
     });
   }
 
-  // 初始渲染月曆視圖
-  switchViewMode('month');
+  // 雲端同步按鈕與自動焦點同步
+  document.getElementById('btn-cloud-sync')?.addEventListener('click', () => {
+    syncWithCloud({ pushLocal: true, quiet: false });
+  });
+
+  window.addEventListener('focus', () => {
+    if (Date.now() - lastCloudPullTime > 5000) {
+      syncWithCloud({ pushLocal: false, quiet: true });
+    }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && Date.now() - lastCloudPullTime > 5000) {
+      syncWithCloud({ pushLocal: false, quiet: true });
+    }
+  });
+
+  // 檢查網址是否帶有 ?date=YYYY-MM-DD (例如從 Gemini Skill 雲端寫入頁跳轉過來)
+  const urlParams = new URLSearchParams(window.location.search);
+  const jumpDate = urlParams.get('date');
+  if (jumpDate && /^\d{4}-\d{2}-\d{2}$/.test(jumpDate)) {
+    openDayView(jumpDate);
+  } else {
+    // 初始渲染月曆視圖
+    switchViewMode('month');
+  }
+
+  // 啟動後自動與 Google 雲端試算表進行雙向同步
+  syncWithCloud({ pushLocal: true, quiet: false });
 }
 
 initApp();

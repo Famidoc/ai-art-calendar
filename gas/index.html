@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 萬用年曆 — 雲端快寫與同步中心</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: rgba(30, 41, 59, 0.88);
+      --border: rgba(148, 163, 184, 0.22);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --emerald: #34d399;
+      --amber: #fbbf24;
+      --rose: #fb7185;
+      --violet: #a78bfa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px 16px 40px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", sans-serif;
+      background: radial-gradient(circle at 20% 15%, #1e3a8a 0%, #0f172a 55%, #090d16 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    .container {
+      width: 100%;
+      max-width: 540px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(14px);
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.16);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+    }
+    .status-banner {
+      padding: 13px 15px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      line-height: 1.45;
+    }
+    .status-banner.saving {
+      background: rgba(56, 189, 248, 0.14);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: #bae6fd;
+    }
+    .status-banner.success {
+      background: rgba(52, 211, 153, 0.16);
+      border: 1px solid rgba(52, 211, 153, 0.45);
+      color: #a7f3d0;
+    }
+    .status-banner.error {
+      background: rgba(251, 113, 133, 0.16);
+      border: 1px solid rgba(251, 113, 133, 0.45);
+      color: #fecdd3;
+    }
+    .hidden { display: none !important; }
+    .field-group {
+      margin-bottom: 14px;
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    input[type="date"],
+    input[type="text"],
+    textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.72);
+      color: var(--text);
+      font-size: 0.95rem;
+      font-family: inherit;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 70px;
+    }
+    .hint {
+      font-size: 0.76rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .btn {
+      flex: 1;
+      min-width: 140px;
+      padding: 12px 16px;
+      border-radius: 11px;
+      border: none;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: transform 0.12s ease, opacity 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #38bdf8);
+      color: #0f172a;
+    }
+    .btn-calendar {
+      background: rgba(52, 211, 153, 0.18);
+      color: #6ee7b7;
+      border: 1px solid rgba(52, 211, 153, 0.45);
+    }
+    .preview-box {
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }
+    .preview-box h4 {
+      margin: 0 0 8px 0;
+      font-size: 0.85rem;
+      color: var(--accent);
+    }
+    .tag {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      margin-right: 4px;
+    }
+    .tag.sky { background: rgba(56, 189, 248, 0.2); color: #7dd3fc; }
+    .tag.emerald { background: rgba(52, 211, 153, 0.2); color: #6ee7b7; }
+    .tag.amber { background: rgba(251, 191, 36, 0.2); color: #fde68a; }
+    .tag.rose { background: rgba(251, 113, 133, 0.2); color: #fda4af; }
+    .tag.violet { background: rgba(167, 139, 250, 0.2); color: #c4b5fd; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title">🎨 AI 萬用年曆 · 雲端快寫</div>
+      <span class="badge">Gemini Skill 連動</span>
+    </div>
+
+    <div id="status-banner" class="status-banner hidden"></div>
+
+    <div id="result-preview" class="preview-box hidden">
+      <h4 id="preview-date-title">📅 已儲存之當日記事總覽</h4>
+      <div id="preview-content"></div>
+    </div>
+
+    <form id="entry-form">
+      <div class="field-group">
+        <label for="input-date">📅 日期 (YYYY-MM-DD)</label>
+        <input type="date" id="input-date" required />
+      </div>
+
+      <div class="field-group">
+        <label for="input-sched">🕒 新增行事安排 (Schedules)</label>
+        <textarea id="input-sched" rows="2" placeholder="範例：09:00~10:30|門診會議|sky; 14:00|演講準備|rose"></textarea>
+        <div class="hint">格式：<code>時間|內容|顏色(sky/emerald/amber/rose/violet)</code>，多筆請用分號 <code>;</code> 或換行分隔</div>
+      </div>
+
+      <div class="field-group">
+        <label for="input-todo">☑️ 新增待辦事項 (To-Do List)</label>
+        <textarea id="input-todo" rows="2" placeholder="範例：準備簡報; 買高鐵票; 印會議資料"></textarea>
+        <div class="hint">多筆待辦請用分號 <code>;</code> 或換行分隔</div>
+      </div>
+
+      <div class="field-group">
+        <label for="input-memo">📝 註記與隨筆備忘 (Memo & Notes)</label>
+        <textarea id="input-memo" rows="3" placeholder="輸入要附加到當日備忘錄的文字..."></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button type="submit" id="btn-save" class="btn btn-primary">💾 寫入雲端萬用年曆</button>
+        <a id="btn-open-calendar" href="https://famidoc.github.io/ai-art-calendar/" target="_blank" class="btn btn-calendar">
+          📅 開啟 AI 萬用年曆
+        </a>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const INITIAL = <?!= initialPayloadJson ?>;
+
+    const dateInput = document.getElementById('input-date');
+    const schedInput = document.getElementById('input-sched');
+    const todoInput = document.getElementById('input-todo');
+    const memoInput = document.getElementById('input-memo');
+    const statusBanner = document.getElementById('status-banner');
+    const previewBox = document.getElementById('result-preview');
+    const previewTitle = document.getElementById('preview-date-title');
+    const previewContent = document.getElementById('preview-content');
+    const openCalBtn = document.getElementById('btn-open-calendar');
+    const saveBtn = document.getElementById('btn-save');
+
+    function updateCalendarLink(dateStr) {
+      const d = dateStr || dateInput.value || '';
+      openCalBtn.href = `https://famidoc.github.io/ai-art-calendar/?date=${encodeURIComponent(d)}&sync=1`;
+    }
+
+    function setStatus(type, msg) {
+      statusBanner.className = `status-banner ${type}`;
+      statusBanner.textContent = msg;
+      statusBanner.classList.remove('hidden');
+    }
+
+    function escapeHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function renderRecordPreview(dateStr, rec) {
+      if (!rec) return;
+      previewBox.classList.remove('hidden');
+      previewTitle.textContent = `📅 ${dateStr} 雲端最新記事內容`;
+
+      const schedHtml = (rec.schedules && rec.schedules.length)
+        ? rec.schedules.map(s => {
+            const t = s.time && s.endTime ? `${s.time}~${s.endTime}` : (s.time || '全天');
+            return `<div>• <span class="tag ${escapeHtml(s.color || 'sky')}">${escapeHtml(t)}</span> ${escapeHtml(s.text)}</div>`;
+          }).join('')
+        : '<div style="color:#64748b">（無行程）</div>';
+
+      const todoHtml = (rec.todos && rec.todos.length)
+        ? rec.todos.map(t => `<div>${t.done ? '☑️' : '⬜'} ${escapeHtml(t.text)}</div>`).join('')
+        : '<div style="color:#64748b">（無待辦）</div>';
+
+      const memoHtml = rec.memo
+        ? `<div style="white-space:pre-wrap;color:#e2e8f0">${escapeHtml(rec.memo)}</div>`
+        : '<div style="color:#64748b">（無備忘）</div>';
+
+      previewContent.innerHTML = `
+        <div style="margin-bottom:8px"><strong>🕒 行事安排：</strong>${schedHtml}</div>
+        <div style="margin-bottom:8px"><strong>☑️ 待辦事項：</strong>${todoHtml}</div>
+        <div><strong>📝 註記備忘：</strong>${memoHtml}</div>
+      `;
+    }
+
+    function submitToCloud(payload, isAuto = false) {
+      setStatus('saving', isAuto ? '⏳ 正在自動寫入來自 Gemini Skill 的記事...' : '⏳ 正在寫入雲端萬用年曆...');
+      saveBtn.disabled = true;
+
+      google.script.run
+        .withSuccessHandler((res) => {
+          saveBtn.disabled = false;
+          if (res && res.ok) {
+            setStatus('success', `✅ 已成功寫入 ${res.date} 的 AI 萬用年曆！手機與電腦打開萬用年曆即會自動同步。`);
+            renderRecordPreview(res.date, res.record);
+            updateCalendarLink(res.date);
+            // 清空已寫入的輸入框避免重複送出
+            schedInput.value = '';
+            todoInput.value = '';
+            memoInput.value = '';
+          } else {
+            setStatus('error', '⚠️ 寫入失敗：' + (res?.error || '未知錯誤'));
+          }
+        })
+        .withFailureHandler((err) => {
+          saveBtn.disabled = false;
+          setStatus('error', '⚠️ 雲端連線失敗：' + (err?.message || err));
+        })
+        .upsertCalendarEntry(payload);
+    }
+
+    // 初始化表單值
+    dateInput.value = INITIAL.date || new Date().toISOString().slice(0, 10);
+    updateCalendarLink(dateInput.value);
+
+    if (Array.isArray(INITIAL.schedules) && INITIAL.schedules.length > 0) {
+      schedInput.value = INITIAL.schedules
+        .map(s => `${s.time && s.endTime ? s.time + '~' + s.endTime : (s.time || '')}|${s.text}|${s.color || 'sky'}`)
+        .join('; ');
+    }
+    if (Array.isArray(INITIAL.todos) && INITIAL.todos.length > 0) {
+      todoInput.value = INITIAL.todos.map(t => t.text).join('; ');
+    }
+    if (INITIAL.memo) {
+      memoInput.value = INITIAL.memo;
+    }
+
+    dateInput.addEventListener('change', () => updateCalendarLink(dateInput.value));
+
+    document.getElementById('entry-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitToCloud({
+        date: dateInput.value,
+        schedules: schedInput.value,
+        todos: todoInput.value,
+        memo: memoInput.value,
+        memoMode: INITIAL.memoMode || 'append',
+        weekKey: INITIAL.weekKey || '',
+        weekMemo: INITIAL.weekMemo || ''
+      }, false);
+    });
+
+    // 若網址帶有參數且 autoWrite 為 true，進入頁面立即自動寫入！
+    if (INITIAL.autoWrite) {
+      submitToCloud({
+        date: dateInput.value,
+        schedules: INITIAL.schedules,
+        todos: INITIAL.todos,
+        memo: INITIAL.memo,
+        memoMode: INITIAL.memoMode || 'append',
+        weekKey: INITIAL.weekKey || '',
+        weekMemo: INITIAL.weekMemo || ''
+      }, true);
+    }
+  </script>
+</body>
+</html>
