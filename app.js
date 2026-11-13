@@ -2251,6 +2251,15 @@ async function initApp() {
     syncWithCloud({ pushLocal: true, quiet: false });
   });
 
+  // 全螢幕無網址列切換按鈕 (支援手機與電腦瀏覽器)
+  document.getElementById('btn-fullscreen')?.addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  });
+
   window.addEventListener('focus', () => {
     if (Date.now() - lastCloudPullTime > 5000) {
       syncWithCloud({ pushLocal: false, quiet: true });

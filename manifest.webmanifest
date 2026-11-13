@@ -1,15 +1,10 @@
 {
-  "id": "/ai-art-calendar/v2",
-  "name": "AI 繪圖萬年桌面月曆 (Art Calendar)",
+  "name": "AI 繪圖萬年桌面月曆",
   "short_name": "AI 萬用年曆",
   "description": "橫式 AI 繪圖萬年桌面月曆 — 上 2/3 專屬年份月份 AI 畫作展示、下 1/3 月曆/週曆/日曆記事與農曆節氣萬年推算",
-  "start_url": "./?v=2",
-  "scope": "./",
+  "start_url": "/ai-art-calendar/index.html",
+  "scope": "/ai-art-calendar/",
   "display": "standalone",
-  "display_override": [
-    "window-controls-overlay",
-    "standalone"
-  ],
   "orientation": "any",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
@@ -38,12 +33,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    },
-    {
-      "src": "icons/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
     }
   ]
 }
