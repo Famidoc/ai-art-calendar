@@ -2263,18 +2263,106 @@ async function initApp() {
     }
   });
 
-  // 檢查網址是否帶有 ?date=YYYY-MM-DD (例如從 Gemini Skill 雲端寫入頁跳轉過來)
+  // 檢查網址是否帶有 ?date=YYYY-MM-DD 與快速寫入參數 (sched / todo / memo / weekMemo)
   const urlParams = new URLSearchParams(window.location.search);
   const jumpDate = urlParams.get('date');
-  if (jumpDate && /^\d{4}-\d{2}-\d{2}$/.test(jumpDate)) {
+  const urlSched = urlParams.get('sched') || urlParams.get('schedules') || '';
+  const urlTodo = urlParams.get('todo') || urlParams.get('todos') || '';
+  const urlMemo = urlParams.get('memo') || '';
+  const urlWeekKey = urlParams.get('weekKey') || '';
+  const urlWeekMemo = urlParams.get('weekMemo') || '';
+
+  const targetWriteDate = (jumpDate && /^\d{4}-\d{2}-\d{2}$/.test(jumpDate))
+    ? jumpDate
+    : formatDateStr(now.getFullYear(), now.getMonth() + 1, now.getDate());
+
+  const hasUrlWrite = Boolean(urlSched || urlTodo || urlMemo || (urlWeekKey && urlWeekMemo));
+  if (hasUrlWrite) {
+    const dayRec = ensureDayRecord(targetWriteDate);
+    const validColors = ['sky', 'emerald', 'amber', 'rose', 'violet'];
+
+    if (urlSched) {
+      const items = urlSched.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
+      for (const item of items) {
+        let time = '';
+        let endTime = '';
+        let text = '';
+        let color = 'sky';
+        if (item.includes('|')) {
+          const parts = item.split('|').map(p => p.trim());
+          const tPart = parts[0] || '';
+          text = parts[1] || '';
+          color = (parts[2] || 'sky').toLowerCase();
+          if (tPart.includes('~') || tPart.includes('-')) {
+            const [st, et] = tPart.split(/[~-]/).map(x => x.trim());
+            time = st;
+            endTime = et;
+          } else {
+            time = tPart;
+          }
+        } else {
+          text = item;
+        }
+        if (!validColors.includes(color)) color = 'sky';
+        if (text && !dayRec.schedules.some(s => s.time === time && s.text === text)) {
+          dayRec.schedules.push({
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            time,
+            endTime,
+            text,
+            color
+          });
+        }
+      }
+      dayRec.schedules.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+    }
+
+    if (urlTodo) {
+      const todos = urlTodo.split(/[;\n|]+/).map(s => s.trim()).filter(Boolean);
+      for (const tText of todos) {
+        if (!dayRec.todos.some(t => t.text === tText)) {
+          dayRec.todos.push({
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            text: tText,
+            done: false
+          });
+        }
+      }
+    }
+
+    if (urlMemo) {
+      const cleanMemo = urlMemo.trim();
+      if (cleanMemo) {
+        if (!dayRec.memo) {
+          dayRec.memo = cleanMemo;
+        } else if (!dayRec.memo.includes(cleanMemo)) {
+          dayRec.memo = dayRec.memo.trim() + '\n' + cleanMemo;
+        }
+      }
+    }
+
+    if (urlWeekKey && urlWeekMemo) {
+      state.data.weekMemos[urlWeekKey] = urlWeekMemo.trim();
+    }
+
+    // 清除網址列上的單次寫入參數，避免重新整理頁面時重複觸發
+    try {
+      const cleanUrl = `${window.location.pathname}?date=${encodeURIComponent(targetWriteDate)}`;
+      window.history.replaceState({}, '', cleanUrl);
+    } catch (_) {}
+
+    openDayView(targetWriteDate);
+    triggerAutoSave(targetWriteDate);
+    setSaveStatus('✅ 已從 AI 連結寫入並同步雲端');
+  } else if (jumpDate && /^\d{4}-\d{2}-\d{2}$/.test(jumpDate)) {
     openDayView(jumpDate);
+    syncWithCloud({ pushLocal: true, quiet: false });
   } else {
     // 初始渲染月曆視圖
     switchViewMode('month');
+    // 啟動後自動與 Google 雲端試算表進行雙向同步
+    syncWithCloud({ pushLocal: true, quiet: false });
   }
-
-  // 啟動後自動與 Google 雲端試算表進行雙向同步
-  syncWithCloud({ pushLocal: true, quiet: false });
 }
 
 initApp();
