@@ -63,6 +63,7 @@
             <button id="btn-next-month" class="icon-btn" title="下個月 (自動跨年)">▶</button>
             <button id="btn-go-today" class="pill-btn today-btn" title="立即跳回今天的年份與日期">📍 今日</button>
             <button id="btn-ai-paste" class="pill-btn ai-paste-btn" title="一鍵貼上從 Gemini Skill 複製的行程、待辦與備忘">✨ AI貼上</button>
+            <button id="btn-open-search" class="icon-btn search-trigger-btn" title="全域關鍵字搜尋行程、待辦與隨筆備忘 (Ctrl+K)">🔍</button>
             <button id="btn-toggle-tools" class="icon-btn tools-toggle-btn" title="展開/收合圖片調整與進階設定工具列">⚙️</button>
           </div>
 
@@ -212,6 +213,14 @@
                 <button type="button" class="color-dot" data-color="amber" style="--dot-color: #fbbf24" title="靈感/創作 (金)"></button>
                 <button type="button" class="color-dot" data-color="violet" style="--dot-color: #a78bfa" title="休閒/家庭 (紫)"></button>
               </div>
+              <select id="sched-repeat-select" class="repeat-select" title="例行週期重複設定（單次或自動建立每週/每月/每年例行行程）">
+                <option value="none">🔁 單次</option>
+                <option value="daily_7">🔁 連續7天</option>
+                <option value="weekly_12">🔁 每週(12週)</option>
+                <option value="biweekly_6">🔁 隔週(6次)</option>
+                <option value="monthly_12">🔁 每月(12月)</option>
+                <option value="yearly_5">🔁 每年(5年)</option>
+              </select>
               <button id="btn-submit-schedule" type="submit" class="add-btn">＋ 新增</button>
               <button id="btn-cancel-edit-schedule" type="button" class="cancel-edit-btn hidden" title="取消修改">取消</button>
             </form>
@@ -222,12 +231,13 @@
           <div class="day-card todo-card">
             <div class="day-card-header">
               <h3>☑️ 待辦事項 <span id="todo-count" class="count-badge">0/0</span></h3>
-              <span class="card-hint">可勾選完成 · 按住拖曳排序</span>
+              <span class="card-hint">可勾選完成 · ↪順延 · 拖曳排序</span>
             </div>
             <form id="form-add-todo" class="add-item-form">
               <input id="todo-text-input" type="text" class="text-input" placeholder="新增今日待辦事項，按 Enter 新增..." required />
               <button type="submit" class="add-btn">＋ 新增</button>
             </form>
+            <div id="overdue-todo-banner" class="overdue-todo-banner hidden"></div>
             <ul id="day-todo-list" class="item-list"></ul>
           </div>
 
@@ -262,6 +272,28 @@
       <div class="memo-lightbox-content">
         <img id="memo-lightbox-img" src="" alt="備忘錄圖片預覽" />
         <button id="btn-close-lightbox" type="button" class="memo-lightbox-close" title="關閉預覽 (Esc)">✕</button>
+      </div>
+    </div>
+
+    <!-- 全域關鍵字搜尋視窗 (Search Modal) -->
+    <div id="search-modal" class="search-modal hidden">
+      <div class="search-modal-backdrop"></div>
+      <div class="search-modal-panel">
+        <div class="search-modal-header">
+          <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input id="search-keyword-input" type="text" class="search-keyword-input" placeholder="輸入關鍵字搜尋跨年份行程、待辦事項、隨筆備忘或本週重點..." autocomplete="off" />
+          </div>
+          <button id="btn-close-search" type="button" class="icon-btn" title="關閉搜尋 (Esc)">✕</button>
+        </div>
+        <div class="search-filter-bar">
+          <button type="button" class="search-filter-pill active" data-filter="all">全部</button>
+          <button type="button" class="search-filter-pill" data-filter="schedule">🕒 行程</button>
+          <button type="button" class="search-filter-pill" data-filter="todo">☑️ 待辦</button>
+          <button type="button" class="search-filter-pill" data-filter="memo">📝 備忘</button>
+          <button type="button" class="search-filter-pill" data-filter="week">🎯 週重點</button>
+        </div>
+        <div id="search-results-list" class="search-results-list"></div>
       </div>
     </div>
   </div>

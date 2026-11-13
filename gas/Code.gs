@@ -280,7 +280,8 @@ function readAllCalendarData() {
 
   const dLast = daysSheet.getLastRow();
   if (dLast >= 2) {
-    const rows = daysSheet.getRange(2, 1, dLast - 1, 7).getValues();
+    const maxCols = Math.max(12, daysSheet.getLastColumn());
+    const rows = daysSheet.getRange(2, 1, dLast - 1, Math.min(12, maxCols)).getValues();
     for (const row of rows) {
       let dateKey = row[0];
       if (dateKey instanceof Date) {
@@ -293,11 +294,23 @@ function readAllCalendarData() {
       const memoCell = String(row[3] ?? '');
       const holidayCell = String(row[4] ?? '').trim() || null;
       const jsonCell = String(row[5] ?? '').trim();
+      const memoImgJoined = [row[7], row[8], row[9], row[10], row[11]]
+        .map(c => String(c || ''))
+        .join('')
+        .trim();
+      let parsedMemoImages = [];
+      if (memoImgJoined.startsWith('[')) {
+        try {
+          const arr = JSON.parse(memoImgJoined);
+          if (Array.isArray(arr)) parsedMemoImages = arr;
+        } catch (_) {}
+      }
 
       let rec = {
         schedules: [],
         todos: [],
         memo: memoCell,
+        memoImages: parsedMemoImages,
         customHoliday: holidayCell,
         syncedGcalIds: [],
         updatedAt: 0
@@ -310,6 +323,7 @@ function readAllCalendarData() {
             schedules: Array.isArray(parsed.schedules) ? parsed.schedules : [],
             todos: Array.isArray(parsed.todos) ? parsed.todos : [],
             memo: memoCell !== '' ? memoCell : String(parsed.memo ?? ''),
+            memoImages: parsedMemoImages.length > 0 ? parsedMemoImages : (Array.isArray(parsed.memoImages) ? parsed.memoImages : []),
             customHoliday: holidayCell || parsed.customHoliday || null,
             syncedGcalIds: Array.isArray(parsed.syncedGcalIds) ? parsed.syncedGcalIds : [],
             updatedAt: Number(parsed.updatedAt) || 0
@@ -369,6 +383,7 @@ function readAllCalendarData() {
  * 將單日記錄寫回或更新至「每日記事」工作表
  */
 function saveDayRecordToSheet(daysSheet, dateStr, dayRec) {
+  const memoImages = Array.isArray(dayRec.memoImages) ? dayRec.memoImages : [];
   const cleanRec = {
     schedules: Array.isArray(dayRec.schedules) ? dayRec.schedules : [],
     todos: Array.isArray(dayRec.todos) ? dayRec.todos : [],
@@ -380,6 +395,16 @@ function saveDayRecordToSheet(daysSheet, dateStr, dayRec) {
 
   cleanRec.schedules.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
 
+  const imgChunks = ['', '', '', '', ''];
+  if (memoImages.length > 0) {
+    const rawImgsJson = JSON.stringify(memoImages);
+    if (rawImgsJson.length <= ART_CHUNK_SIZE * ART_MAX_CHUNKS) {
+      for (let i = 0; i < ART_MAX_CHUNKS; i++) {
+        imgChunks[i] = rawImgsJson.slice(i * ART_CHUNK_SIZE, (i + 1) * ART_CHUNK_SIZE);
+      }
+    }
+  }
+
   const rowValues = [
     dateStr,
     formatSchedulesReadable(cleanRec.schedules),
@@ -387,8 +412,15 @@ function saveDayRecordToSheet(daysSheet, dateStr, dayRec) {
     cleanRec.memo,
     cleanRec.customHoliday || '',
     JSON.stringify(cleanRec),
-    getNowTimestampStr()
+    getNowTimestampStr(),
+    imgChunks[0],
+    imgChunks[1],
+    imgChunks[2],
+    imgChunks[3],
+    imgChunks[4]
   ];
+
+  const fullRec = { ...cleanRec, memoImages: imgChunks[0] ? memoImages : [] };
 
   const lastRow = daysSheet.getLastRow();
   if (lastRow >= 2) {
@@ -401,14 +433,14 @@ function saveDayRecordToSheet(daysSheet, dateStr, dayRec) {
         existingDate = String(existingDate || '').trim();
       }
       if (existingDate === dateStr) {
-        daysSheet.getRange(i + 2, 1, 1, 7).setValues([rowValues]);
-        return cleanRec;
+        daysSheet.getRange(i + 2, 1, 1, 12).setValues([rowValues]);
+        return fullRec;
       }
     }
   }
 
   daysSheet.appendRow(rowValues);
-  return cleanRec;
+  return fullRec;
 }
 
 function saveWeekMemoToSheet(weeksSheet, weekKey, memoText) {
@@ -845,6 +877,7 @@ function syncCalendarBatch(payload) {
         (Array.isArray(inRec.schedules) && inRec.schedules.length > 0) ||
         (Array.isArray(inRec.todos) && inRec.todos.length > 0) ||
         Boolean(inRec.memo && String(inRec.memo).trim()) ||
+        (Array.isArray(inRec.memoImages) && inRec.memoImages.length > 0) ||
         Boolean(inRec.customHoliday);
 
       const cloudRec = current.days[dateStr];
@@ -859,10 +892,14 @@ function syncCalendarBatch(payload) {
 
       // 嚴格以最新編輯時間戳 (inUpdated > cloudUpdated) 或明確操作變更 (replaceDates) 為準，絕不把舊裝置已刪除的項目合併復活
       if (!cloudRec || isExplicitReplace || (inUpdated > 0 && inUpdated > cloudUpdated) || (cloudUpdated === 0 && inUpdated === 0 && hasContent)) {
+        const mergedMemoImages = Array.isArray(inRec.memoImages)
+          ? inRec.memoImages
+          : (Array.isArray(cloudRec?.memoImages) ? cloudRec.memoImages : []);
         const merged = {
           schedules: Array.isArray(inRec.schedules) ? inRec.schedules : [],
           todos: Array.isArray(inRec.todos) ? inRec.todos : [],
           memo: String(inRec.memo ?? ''),
+          memoImages: mergedMemoImages,
           customHoliday: inRec.customHoliday || null,
           syncedGcalIds: combinedGcalIds,
           updatedAt: isExplicitReplace ? Math.max(inUpdated, cloudUpdated + 1, Date.now()) : (inUpdated || Date.now())

@@ -562,20 +562,21 @@ function compressImageBlobToDataUrl(blob, maxDim = 1600) {
 
 async function addMemoImageFromBlob(blob, targetDateStr = state.currentDateStr) {
   if (!blob || !blob.type?.startsWith('image/')) return false;
-  setSaveStatus('⏳ 正在處理貼上的圖片...');
+  setSaveStatus('⏳ 正在處理並同步貼圖...');
   try {
-    const dataUrl = await compressImageBlobToDataUrl(blob);
+    const rawDataUrl = await compressImageBlobToDataUrl(blob);
+    const cloudReadyUrl = (await compressArtworkDataUrl(rawDataUrl, 960, 0.72)) || rawDataUrl;
     const dayRec = ensureDayRecord(targetDateStr);
     dayRec.memoImages.push({
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      dataUrl,
+      dataUrl: cloudReadyUrl,
       createdAt: new Date().toISOString()
     });
-    triggerAutoSave();
+    triggerAutoSave(targetDateStr);
     if (state.currentView === 'day') renderDayView();
     else if (state.currentView === 'week') renderWeekView();
     else if (state.currentView === 'month') renderMonthView();
-    setSaveStatus('✓ 已貼上圖片至備忘錄');
+    setSaveStatus('✓ 已貼上圖片至備忘錄並排入雲端同步');
     return true;
   } catch (err) {
     console.warn('Add memo image failed:', err);
@@ -609,6 +610,7 @@ function startEditSchedule(item) {
   const textInput = document.getElementById('sched-text-input');
   const submitBtn = document.getElementById('btn-submit-schedule');
   const cancelBtn = document.getElementById('btn-cancel-edit-schedule');
+  const repeatSelect = document.getElementById('sched-repeat-select');
 
   if (startInput) startInput.value = item.time || '';
   if (endInput) endInput.value = item.endTime || '';
@@ -617,6 +619,7 @@ function startEditSchedule(item) {
 
   if (submitBtn) submitBtn.textContent = '✓ 儲存';
   if (cancelBtn) cancelBtn.classList.remove('hidden');
+  if (repeatSelect) repeatSelect.classList.add('hidden');
 
   renderDayView();
   if (endInput && !item.endTime) {
@@ -633,12 +636,17 @@ function cancelEditSchedule(skipRender = false) {
   const textInput = document.getElementById('sched-text-input');
   const submitBtn = document.getElementById('btn-submit-schedule');
   const cancelBtn = document.getElementById('btn-cancel-edit-schedule');
+  const repeatSelect = document.getElementById('sched-repeat-select');
 
   if (startInput && !startInput.value) startInput.value = '09:00';
   if (endInput) endInput.value = '';
   if (textInput) textInput.value = '';
   if (submitBtn) submitBtn.textContent = '＋ 新增';
   if (cancelBtn) cancelBtn.classList.add('hidden');
+  if (repeatSelect) {
+    repeatSelect.value = 'none';
+    repeatSelect.classList.remove('hidden');
+  }
   if (!skipRender && state.currentView === 'day') {
     renderDayView();
   }
@@ -923,7 +931,7 @@ function mergeLoadedData(incoming) {
             schedules: Array.isArray(inDay.schedules) ? inDay.schedules : [],
             todos: Array.isArray(inDay.todos) ? inDay.todos : [],
             memo: String(inDay.memo ?? ''),
-            memoImages: preservedImages,
+            memoImages: Array.isArray(inDay.memoImages) ? inDay.memoImages : preservedImages,
             customHoliday: inDay.customHoliday ?? curDay.customHoliday ?? null,
             syncedGcalIds: mergedGcalIds,
             updatedAt: inTime
@@ -1003,14 +1011,37 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
           (Array.isArray(dVal.schedules) && dVal.schedules.length > 0) ||
           (Array.isArray(dVal.todos) && dVal.todos.length > 0) ||
           Boolean(dVal.memo && String(dVal.memo).trim()) ||
+          (Array.isArray(dVal.memoImages) && dVal.memoImages.length > 0) ||
           Boolean(dVal.customHoliday) ||
           Number(dVal.updatedAt) > 0 ||
           pendingCloudReplaceDates.has(dKey);
         if (!hasData) continue;
+
+        let cloudMemoImages = [];
+        if (Array.isArray(dVal.memoImages) && dVal.memoImages.length > 0) {
+          for (const imgObj of dVal.memoImages) {
+            if (!imgObj?.dataUrl) continue;
+            let cUrl = imgObj.dataUrl;
+            if (cUrl.length > 85000) {
+              cUrl = (await compressArtworkDataUrl(cUrl, 960, 0.7)) || cUrl;
+              imgObj.dataUrl = cUrl;
+            }
+            cloudMemoImages.push({
+              id: imgObj.id || Date.now().toString(36),
+              dataUrl: cUrl,
+              createdAt: imgObj.createdAt || ''
+            });
+          }
+          if (JSON.stringify(cloudMemoImages).length > 210000) {
+            cloudMemoImages = cloudMemoImages.slice(0, 3);
+          }
+        }
+
         lightDays[dKey] = {
           schedules: dVal.schedules || [],
           todos: dVal.todos || [],
           memo: dVal.memo || '',
+          memoImages: cloudMemoImages,
           customHoliday: dVal.customHoliday || null,
           syncedGcalIds: dVal.syncedGcalIds || [],
           updatedAt: Number(dVal.updatedAt) || 0
@@ -1073,7 +1104,7 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
       lastCloudPullTime = Date.now();
       const cloudMonthArt = cloudPayload.monthArt || {};
 
-      // 自動偵測本機已有自訂圖片 (例如先前在瀏覽器上傳的 2026-12 圖檔) 但雲端尚未建立紀錄的月份，自動排入雲端上傳
+      // 自動偵測本機已有自訂圖片 (例如先前在瀏覽器上傳的 2026-12 圖檔或單日備忘附圖) 但雲端尚未建立紀錄的項目，自動排入雲端上傳
       let foundUnsyncedLocalArt = false;
       for (const [ymKey, localArt] of Object.entries(state.data.monthArt || {})) {
         if (
@@ -1083,6 +1114,19 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
           !pendingCloudMonthArtKeys.has(ymKey)
         ) {
           markMonthArtUpdated(ymKey);
+          foundUnsyncedLocalArt = true;
+        }
+      }
+      const cloudDays = cloudPayload.days || {};
+      for (const [dKey, localDay] of Object.entries(state.data.days || {})) {
+        if (
+          /^\d{4}-\d{2}-\d{2}$/.test(dKey) &&
+          Array.isArray(localDay?.memoImages) &&
+          localDay.memoImages.length > 0 &&
+          (!Array.isArray(cloudDays[dKey]?.memoImages) || cloudDays[dKey].memoImages.length === 0) &&
+          !pendingCloudReplaceDates.has(dKey)
+        ) {
+          markDayUpdated(dKey);
           foundUnsyncedLocalArt = true;
         }
       }
@@ -1645,7 +1689,56 @@ function renderDayView() {
     });
   }
 
-  // 2. 渲染待辦事項 (To-Dos - 支援拖曳排序)
+  // 2. 渲染待辦事項 (To-Dos - 支援拖曳排序、一鍵順延與過期未完成提醒)
+  const nowDt = new Date();
+  const todayStr = formatDateStr(nowDt.getFullYear(), nowDt.getMonth() + 1, nowDt.getDate());
+  const overdueBanner = document.getElementById('overdue-todo-banner');
+  if (overdueBanner) {
+    overdueBanner.innerHTML = '';
+    overdueBanner.classList.add('hidden');
+    if (meta.dateStr === todayStr) {
+      const overdueEntries = [];
+      for (let i = 1; i <= 30; i++) {
+        const pastD = new Date(nowDt.getFullYear(), nowDt.getMonth(), nowDt.getDate() - i);
+        const pastStr = formatDateStr(pastD.getFullYear(), pastD.getMonth() + 1, pastD.getDate());
+        const pastRec = state.data.days[pastStr];
+        if (Array.isArray(pastRec?.todos)) {
+          const unfinished = pastRec.todos.filter(t => t && !t.done && t.text);
+          if (unfinished.length > 0) {
+            overdueEntries.push({ dateStr: pastStr, items: unfinished });
+          }
+        }
+      }
+      const totalOverdue = overdueEntries.reduce((acc, cur) => acc + cur.items.length, 0);
+      if (totalOverdue > 0) {
+        overdueBanner.classList.remove('hidden');
+        overdueBanner.innerHTML = `
+          <span>⏳ 過去 30 天內有 <strong>${totalOverdue}</strong> 項未完成待辦</span>
+          <button type="button" id="btn-carryover-all" class="carryover-btn" title="將過去未完成的待辦事項全部順延至今日">↪ 一鍵移至今日</button>
+        `;
+        overdueBanner.querySelector('#btn-carryover-all')?.addEventListener('click', () => {
+          for (const entry of overdueEntries) {
+            const pRec = ensureDayRecord(entry.dateStr);
+            for (const item of entry.items) {
+              if (!dayRec.todos.some(t => t.text === item.text && !t.done)) {
+                dayRec.todos.push({
+                  id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                  text: item.text,
+                  done: false
+                });
+              }
+            }
+            pRec.todos = pRec.todos.filter(t => t.done);
+            markDayUpdated(entry.dateStr);
+          }
+          triggerAutoSave(todayStr);
+          renderDayView();
+          setSaveStatus(`↪ 已將 ${totalOverdue} 項未完成待辦順延至今日`);
+        });
+      }
+    }
+  }
+
   const doneCount = dayRec.todos.filter(t => t.done).length;
   document.getElementById('todo-count').textContent = `${doneCount}/${dayRec.todos.length}`;
   const todoList = document.getElementById('day-todo-list');
@@ -1658,6 +1751,10 @@ function renderDayView() {
       li.className = `list-item todo-sortable-item ${item.done ? 'done' : ''}`;
       li.draggable = true;
       li.dataset.todoId = item.id;
+      const deferLabel = meta.dateStr < todayStr ? '↪ 移至今日' : '↪ 順延明日';
+      const deferBtnHtml = !item.done
+        ? `<button type="button" class="defer-item-btn" title="將此未完成待辦順延至${meta.dateStr < todayStr ? '今日' : '明天'}">${deferLabel}</button>`
+        : '';
       li.innerHTML = `
         <div class="list-item-left">
           <span class="todo-drag-handle" title="按住上下拖曳可調整順序">⠿</span>
@@ -1666,7 +1763,10 @@ function renderDayView() {
             <span class="item-text">${escapeHtml(item.text)}</span>
           </label>
         </div>
-        <button type="button" class="delete-item-btn" title="刪除此待辦">✕</button>
+        <div class="item-actions">
+          ${deferBtnHtml}
+          <button type="button" class="delete-item-btn" title="刪除此待辦">✕</button>
+        </div>
       `;
       li.addEventListener('dragstart', (e) => {
         e.stopPropagation();
@@ -1682,6 +1782,27 @@ function renderDayView() {
         item.done = e.target.checked;
         triggerAutoSave(state.currentDateStr);
         renderDayView();
+      });
+      li.querySelector('.defer-item-btn')?.addEventListener('click', () => {
+        let targetDateStr = todayStr;
+        if (meta.dateStr >= todayStr) {
+          const nextD = parseDateStr(meta.dateStr);
+          nextD.setDate(nextD.getDate() + 1);
+          targetDateStr = formatDateStr(nextD.getFullYear(), nextD.getMonth() + 1, nextD.getDate());
+        }
+        const targetRec = ensureDayRecord(targetDateStr);
+        if (!targetRec.todos.some(t => t.text === item.text && !t.done)) {
+          targetRec.todos.push({
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            text: item.text,
+            done: false
+          });
+        }
+        dayRec.todos = dayRec.todos.filter(t => t.id !== item.id);
+        markDayUpdated(targetDateStr);
+        triggerAutoSave(state.currentDateStr);
+        renderDayView();
+        setSaveStatus(`↪ 已順延至 ${targetDateStr}`);
       });
       li.querySelector('.delete-item-btn').addEventListener('click', () => {
         dayRec.todos = dayRec.todos.filter(t => t.id !== item.id);
@@ -1723,7 +1844,7 @@ function renderDayView() {
       card.querySelector('.memo-img-del-btn').addEventListener('click', (e) => {
         e.stopPropagation();
         dayRec.memoImages = dayRec.memoImages.filter(img => img.id !== imgObj.id);
-        triggerAutoSave();
+        triggerAutoSave(state.currentDateStr);
         renderDayView();
         setSaveStatus('✓ 已移除備忘錄圖片');
       });
@@ -2174,7 +2295,7 @@ async function initApp() {
     });
   });
 
-  // 新增或更新當日行程
+  // 新增或更新當日行程 (支援單次與週期重複例行行程建立)
   document.getElementById('form-add-schedule').addEventListener('submit', (e) => {
     e.preventDefault();
     const timeVal = document.getElementById('sched-time-input').value;
@@ -2182,6 +2303,8 @@ async function initApp() {
     const endTimeVal = endTimeInput ? endTimeInput.value : '';
     const textInput = document.getElementById('sched-text-input');
     const textVal = textInput.value.trim();
+    const repeatSelect = document.getElementById('sched-repeat-select');
+    const repeatMode = repeatSelect ? repeatSelect.value : 'none';
     if (!textVal) return;
 
     const dayRec = ensureDayRecord(state.currentDateStr);
@@ -2201,21 +2324,68 @@ async function initApp() {
           color: state.selectedColor
         });
       }
+      dayRec.schedules.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
       cancelEditSchedule(true);
-    } else {
-      dayRec.schedules.push({
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-        time: timeVal || '',
-        endTime: endTimeVal || '',
-        text: textVal,
-        color: state.selectedColor
-      });
-      textInput.value = '';
-      if (endTimeInput) endTimeInput.value = '';
+      triggerAutoSave(state.currentDateStr);
+      renderDayView();
+      return;
     }
-    dayRec.schedules.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+
+    // 計算週期重複的目標日期清單
+    const baseDate = parseDateStr(state.currentDateStr);
+    const targetDates = [];
+    if (repeatMode === 'daily_7') {
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + i);
+        targetDates.push(formatDateStr(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+      }
+    } else if (repeatMode === 'weekly_12') {
+      for (let i = 0; i < 12; i++) {
+        const d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + i * 7);
+        targetDates.push(formatDateStr(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+      }
+    } else if (repeatMode === 'biweekly_6') {
+      for (let i = 0; i < 6; i++) {
+        const d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + i * 14);
+        targetDates.push(formatDateStr(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+      }
+    } else if (repeatMode === 'monthly_12') {
+      for (let i = 0; i < 12; i++) {
+        const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, baseDate.getDate());
+        targetDates.push(formatDateStr(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+      }
+    } else if (repeatMode === 'yearly_5') {
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(baseDate.getFullYear() + i, baseDate.getMonth(), baseDate.getDate());
+        targetDates.push(formatDateStr(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+      }
+    } else {
+      targetDates.push(state.currentDateStr);
+    }
+
+    for (const dStr of targetDates) {
+      const rec = ensureDayRecord(dStr);
+      if (!rec.schedules.some(s => s.time === (timeVal || '') && s.text === textVal)) {
+        rec.schedules.push({
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          time: timeVal || '',
+          endTime: endTimeVal || '',
+          text: textVal,
+          color: state.selectedColor
+        });
+        rec.schedules.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+      }
+      markDayUpdated(dStr);
+    }
+
+    textInput.value = '';
+    if (endTimeInput) endTimeInput.value = '';
+    if (repeatSelect) repeatSelect.value = 'none';
     triggerAutoSave(state.currentDateStr);
     renderDayView();
+    if (targetDates.length > 1) {
+      setSaveStatus(`🔁 已建立週期例行行程（共 ${targetDates.length} 筆）`);
+    }
   });
 
   document.getElementById('btn-cancel-edit-schedule')?.addEventListener('click', () => {
@@ -2644,6 +2814,201 @@ async function initApp() {
       const expanded = widgetTopbar.classList.toggle('tools-expanded');
       btnToggleTools.classList.toggle('active', expanded);
     });
+  }
+
+  // ============================================================================
+  // 🔍 全域關鍵字搜尋功能 (支援跨年份搜尋行程、待辦、備忘與本週重點，快捷鍵 Ctrl+K)
+  // ============================================================================
+  const searchModal = document.getElementById('search-modal');
+  const searchInput = document.getElementById('search-keyword-input');
+  const searchResultsEl = document.getElementById('search-results-list');
+  let currentSearchFilter = 'all';
+
+  function highlightKeywordHtml(text, kw) {
+    const safe = escapeHtml(text);
+    if (!kw) return safe;
+    const escapedKw = escapeHtml(kw).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return safe.replace(new RegExp(`(${escapedKw})`, 'gi'), '<mark class="search-highlight">$1</mark>');
+  }
+
+  function renderSearchResults() {
+    if (!searchResultsEl) return;
+    const kw = (searchInput?.value || '').trim().toLowerCase();
+    const results = [];
+
+    for (const [dateStr, dayRec] of Object.entries(state.data.days || {})) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr) || !dayRec) continue;
+
+      if (currentSearchFilter === 'all' || currentSearchFilter === 'schedule') {
+        for (const s of dayRec.schedules || []) {
+          if (!s?.text) continue;
+          const full = `${formatScheduleTimeLabel(s, '全天')} ${s.text}`;
+          if (!kw || full.toLowerCase().includes(kw) || dateStr.includes(kw)) {
+            results.push({
+              dateStr,
+              type: 'schedule',
+              badge: '🕒 行程',
+              text: full
+            });
+          }
+        }
+      }
+
+      if (currentSearchFilter === 'all' || currentSearchFilter === 'todo') {
+        for (const t of dayRec.todos || []) {
+          if (!t?.text) continue;
+          const prefix = t.done ? '[已完成] ' : '[待辦] ';
+          if (!kw || t.text.toLowerCase().includes(kw) || dateStr.includes(kw)) {
+            results.push({
+              dateStr,
+              type: 'todo',
+              badge: t.done ? '✅ 已完成' : '☑️ 待辦',
+              text: prefix + t.text
+            });
+          }
+        }
+      }
+
+      if (currentSearchFilter === 'all' || currentSearchFilter === 'memo') {
+        const memoText = String(dayRec.memo || '').trim();
+        if (memoText && (!kw || memoText.toLowerCase().includes(kw) || dateStr.includes(kw))) {
+          results.push({
+            dateStr,
+            type: 'memo',
+            badge: '📝 備忘',
+            text: memoText.length > 110 ? memoText.slice(0, 110) + '...' : memoText
+          });
+        }
+      }
+    }
+
+    if (currentSearchFilter === 'all' || currentSearchFilter === 'week') {
+      for (const [wKey, wMemo] of Object.entries(state.data.weekMemos || {})) {
+        const cleanW = String(wMemo || '').trim();
+        if (!cleanW) continue;
+        if (!kw || cleanW.toLowerCase().includes(kw) || wKey.toLowerCase().includes(kw)) {
+          results.push({
+            dateStr: wKey,
+            weekKey: wKey,
+            type: 'week',
+            badge: '🎯 週重點',
+            text: cleanW
+          });
+        }
+      }
+    }
+
+    results.sort((a, b) => b.dateStr.localeCompare(a.dateStr));
+    const limited = results.slice(0, 60);
+
+    if (limited.length === 0) {
+      searchResultsEl.innerHTML = `<div class="search-empty-hint">${kw ? '找不到符合「' + escapeHtml(searchInput.value) + '」的紀錄' : '目前尚無任何行程、待辦或備忘紀錄'}</div>`;
+      return;
+    }
+
+    searchResultsEl.innerHTML = '';
+    limited.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'search-result-item';
+      row.innerHTML = `
+        <div class="search-result-left">
+          <div class="search-result-meta">
+            <span>📅 ${escapeHtml(item.dateStr)}</span>
+            <span class="search-type-badge">${item.badge}</span>
+          </div>
+          <div class="search-result-text">${highlightKeywordHtml(item.text, searchInput?.value?.trim() || '')}</div>
+        </div>
+      `;
+      row.addEventListener('click', () => {
+        closeSearchModal();
+        if (item.type === 'week' && item.weekKey) {
+          const m = item.weekKey.match(/^(\d{4})-(\d{2})-W(\d+)$/);
+          if (m) {
+            openWeekView(Number(m[1]), Number(m[2]), Math.max(0, Number(m[3]) - 1));
+            return;
+          }
+        }
+        openDayView(item.dateStr);
+      });
+      searchResultsEl.appendChild(row);
+    });
+  }
+
+  function openSearchModal() {
+    if (!searchModal) return;
+    searchModal.classList.remove('hidden');
+    renderSearchResults();
+    setTimeout(() => searchInput?.focus(), 30);
+  }
+
+  function closeSearchModal() {
+    searchModal?.classList.add('hidden');
+  }
+
+  document.getElementById('btn-open-search')?.addEventListener('click', openSearchModal);
+  document.getElementById('btn-close-search')?.addEventListener('click', closeSearchModal);
+  document.querySelector('#search-modal .search-modal-backdrop')?.addEventListener('click', closeSearchModal);
+  searchInput?.addEventListener('input', renderSearchResults);
+
+  document.querySelectorAll('.search-filter-pill').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.search-filter-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSearchFilter = btn.dataset.filter || 'all';
+      renderSearchResults();
+    });
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      if (searchModal?.classList.contains('hidden')) openSearchModal();
+      else closeSearchModal();
+    } else if (e.key === 'Escape' && searchModal && !searchModal.classList.contains('hidden')) {
+      closeSearchModal();
+    }
+  });
+
+  // ============================================================================
+  // 📱 手機版左右滑動手勢 (Swipe Left / Right 切換前一天/後一天、上個月/下個月)
+  // ============================================================================
+  const calSection = document.getElementById('calendar-section');
+  if (calSection) {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchStartTime = 0;
+    let ignoreSwipe = false;
+
+    calSection.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const target = e.target;
+      // 若在週曆橫向捲動容器或表單輸入框內滑動，不觸發整頁翻頁手勢
+      if (target && target.closest('.week-days-container, input, textarea, select, button, .memo-images-grid')) {
+        ignoreSwipe = true;
+        return;
+      }
+      ignoreSwipe = false;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchStartTime = Date.now();
+    }, { passive: true });
+
+    calSection.addEventListener('touchend', (e) => {
+      if (ignoreSwipe || !e.changedTouches || e.changedTouches.length !== 1) return;
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      const dy = e.changedTouches[0].clientY - touchStartY;
+      const dt = Date.now() - touchStartTime;
+
+      if (dt < 550 && Math.abs(dx) > 58 && Math.abs(dx) > Math.abs(dy) * 1.85) {
+        if (state.currentView === 'day') {
+          const d = parseDateStr(state.currentDateStr);
+          d.setDate(d.getDate() + (dx < 0 ? 1 : -1));
+          openDayView(formatDateStr(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+        } else if (state.currentView === 'month') {
+          stepMonth(dx < 0 ? 1 : -1);
+        }
+      }
+    }, { passive: true });
   }
 
   // 檢查網址是否帶有 ?date=YYYY-MM-DD 與快速寫入參數 (sched / todo / memo / weekMemo)
