@@ -824,6 +824,7 @@ function mergeLoadedData(incoming) {
           memo: String(inDay.memo ?? ''),
           memoImages: Array.isArray(inDay.memoImages) ? inDay.memoImages : [],
           customHoliday: inDay.customHoliday || null,
+          syncedGcalIds: Array.isArray(inDay.syncedGcalIds) ? inDay.syncedGcalIds : [],
           updatedAt: Number(inDay.updatedAt) || 0
         };
       } else {
@@ -832,6 +833,9 @@ function mergeLoadedData(incoming) {
         const preservedImages = (Array.isArray(inDay.memoImages) && inDay.memoImages.length > 0)
           ? inDay.memoImages
           : (Array.isArray(curDay.memoImages) ? curDay.memoImages : []);
+        const mergedGcalIds = [
+          ...new Set([...(curDay.syncedGcalIds || []), ...(inDay.syncedGcalIds || [])])
+        ];
 
         if (inTime > curTime) {
           state.data.days[dateStr] = {
@@ -840,15 +844,18 @@ function mergeLoadedData(incoming) {
             memo: String(inDay.memo ?? ''),
             memoImages: preservedImages,
             customHoliday: inDay.customHoliday ?? curDay.customHoliday ?? null,
+            syncedGcalIds: mergedGcalIds,
             updatedAt: inTime
           };
         } else if (curTime === 0 && inTime === 0) {
           state.data.days[dateStr] = {
             ...curDay,
             ...inDay,
+            syncedGcalIds: mergedGcalIds,
             memoImages: preservedImages
           };
         } else {
+          curDay.syncedGcalIds = mergedGcalIds;
           curDay.memoImages = preservedImages;
         }
       }
@@ -917,6 +924,7 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
           todos: dVal.todos || [],
           memo: dVal.memo || '',
           customHoliday: dVal.customHoliday || null,
+          syncedGcalIds: dVal.syncedGcalIds || [],
           updatedAt: Number(dVal.updatedAt) || Date.now()
         };
       }
@@ -930,7 +938,8 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
           action: 'sync_batch',
           days: lightDays,
           weekMemos: state.data.weekMemos || {},
-          replaceDates
+          replaceDates,
+          forceGcal: !quiet
         })
       });
       if (res.ok) {
@@ -940,7 +949,7 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
         }
       }
     } else {
-      const res = await fetch(`${CLOUD_SYNC_URL}?action=sync&t=${Date.now()}`);
+      const res = await fetch(`${CLOUD_SYNC_URL}?action=sync&forceGcal=${!quiet ? '1' : '0'}&t=${Date.now()}`);
       if (res.ok) {
         cloudPayload = await res.json();
       }

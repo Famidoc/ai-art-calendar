@@ -258,6 +258,7 @@ function readAllCalendarData() {
         todos: [],
         memo: memoCell,
         customHoliday: holidayCell,
+        syncedGcalIds: [],
         updatedAt: 0
       };
 
@@ -269,6 +270,7 @@ function readAllCalendarData() {
             todos: Array.isArray(parsed.todos) ? parsed.todos : [],
             memo: memoCell !== '' ? memoCell : String(parsed.memo ?? ''),
             customHoliday: holidayCell || parsed.customHoliday || null,
+            syncedGcalIds: Array.isArray(parsed.syncedGcalIds) ? parsed.syncedGcalIds : [],
             updatedAt: Number(parsed.updatedAt) || 0
           };
         } catch (_) {}
@@ -299,6 +301,7 @@ function saveDayRecordToSheet(daysSheet, dateStr, dayRec) {
     todos: Array.isArray(dayRec.todos) ? dayRec.todos : [],
     memo: String(dayRec.memo ?? ''),
     customHoliday: dayRec.customHoliday || null,
+    syncedGcalIds: Array.isArray(dayRec.syncedGcalIds) ? [...new Set(dayRec.syncedGcalIds)] : [],
     updatedAt: Number(dayRec.updatedAt) || Date.now()
   };
 
@@ -348,6 +351,250 @@ function saveWeekMemoToSheet(weeksSheet, weekKey, memoText) {
     }
   }
   weeksSheet.appendRow(rowValues);
+}
+
+/**
+ * ============================================================================
+ * Google Calendar (Google 日曆) 智慧雙向橋接 (支援手機 Gemini 語音/文字免複製直寫)
+ * ============================================================================
+ */
+function detectGcalColorAndCleanTitle(rawTitle) {
+  let text = String(rawTitle || '').trim();
+  let color = 'sky';
+
+  const tagMatch = text.match(/\[(sky|rose|emerald|amber|violet)\]$/i);
+  if (tagMatch) {
+    color = tagMatch[1].toLowerCase();
+    text = text.replace(/\s*\[(sky|rose|emerald|amber|violet)\]$/i, '').trim();
+    return { text, color };
+  }
+
+  if (/重要|緊急|演講|截稿|發表|手術|急診|紅字/i.test(text)) {
+    color = 'rose';
+  } else if (/單車|騎車|環島|運動|跑步|登山|旅行|出遊|聚餐|家庭|休假/i.test(text)) {
+    color = 'emerald';
+  } else if (/AI|寫作|創作|靈感|閱讀|讀書|繪圖|研究/i.test(text)) {
+    color = 'violet';
+  } else if (/門診|看診|會議|開會|巡房|討論|教學/i.test(text)) {
+    color = 'sky';
+  }
+
+  return { text, color };
+}
+
+/**
+ * 從使用者的預設 Google 日曆拉取近期與未來活動 (-14 天 ~ +90 天) 並自動轉入萬用年曆
+ * 支援標題或說明中包含 [待辦] / TODO: 與 [備忘] / MEMO: 自動分流至三欄
+ */
+function pullFromGoogleCalendar(daysSheet, currentDays, force = false) {
+  try {
+    const cache = CacheService.getScriptCache();
+    if (!force && cache) {
+      const lastPull = Number(cache.get('last_gcal_pull_ts') || 0);
+      if (Date.now() - lastPull < 40000) {
+        return false;
+      }
+    }
+
+    const cal = CalendarApp.getDefaultCalendar();
+    if (!cal) return false;
+
+    const nowMs = Date.now();
+    const startWin = new Date(nowMs - 14 * 86400000);
+    const endWin = new Date(nowMs + 90 * 86400000);
+    const events = cal.getEvents(startWin, endWin);
+    const dirtyDates = new Set();
+
+    for (const ev of events) {
+      const gcalId = ev.getId();
+      const rawTitle = String(ev.getTitle() || '').trim();
+      if (!rawTitle) continue;
+
+      const startDt = ev.getStartTime();
+      const endDt = ev.getEndTime();
+      const dateStr = Utilities.formatDate(startDt, 'Asia/Taipei', 'yyyy-MM-dd');
+
+      if (!currentDays[dateStr]) {
+        currentDays[dateStr] = {
+          schedules: [],
+          todos: [],
+          memo: '',
+          customHoliday: null,
+          syncedGcalIds: [],
+          updatedAt: 0
+        };
+      }
+      const dayRec = currentDays[dateStr];
+      if (!Array.isArray(dayRec.syncedGcalIds)) dayRec.syncedGcalIds = [];
+
+      // 若此 Google Calendar Event ID 已經匯入過，不重複匯入（避免使用者在萬用年曆刪除後又復活）
+      if (dayRec.syncedGcalIds.includes(gcalId) || dayRec.schedules.some(s => s.gcalId === gcalId)) {
+        continue;
+      }
+
+      dayRec.syncedGcalIds.push(gcalId);
+      let changed = true;
+
+      // 1. 檢查標題是否為專門的 [待辦] / TODO: 或 [備忘] / MEMO:
+      const todoTitleMatch = rawTitle.match(/^(?:\[待辦\]|\[TODO\]|TODO|待辦|待辦事項)\s*[:：]?\s*(.+)$/i);
+      const memoTitleMatch = rawTitle.match(/^(?:\[備忘\]|\[註記\]|\[MEMO\]|MEMO|NOTE|備忘|註記)\s*[:：]?\s*(.+)$/i);
+
+      if (todoTitleMatch) {
+        const todoItems = parseTodosParam(todoTitleMatch[1]);
+        for (const t of todoItems) {
+          if (!dayRec.todos.some(ex => ex.text === t.text)) {
+            dayRec.todos.push(t);
+          }
+        }
+      } else if (memoTitleMatch) {
+        const mText = memoTitleMatch[1].trim();
+        if (mText && (!dayRec.memo || !dayRec.memo.includes(mText))) {
+          dayRec.memo = dayRec.memo ? (dayRec.memo.trim() + '\n' + mText) : mText;
+        }
+      } else {
+        // 一般日曆行程 -> 轉入「🕒 行事安排」
+        let startTime = '';
+        let endTime = '';
+        if (!ev.isAllDayEvent()) {
+          startTime = Utilities.formatDate(startDt, 'Asia/Taipei', 'HH:mm');
+          endTime = Utilities.formatDate(endDt, 'Asia/Taipei', 'HH:mm');
+          if (endTime === startTime) endTime = '';
+        }
+        const { text: cleanTitle, color } = detectGcalColorAndCleanTitle(rawTitle);
+        const existingSched = dayRec.schedules.find(
+          s => s.text === cleanTitle && (s.time === startTime || (!s.time && !startTime))
+        );
+        if (existingSched) {
+          existingSched.gcalId = gcalId;
+          if (!existingSched.endTime && endTime) existingSched.endTime = endTime;
+        } else if (cleanTitle) {
+          dayRec.schedules.push({
+            id: makeId(),
+            time: startTime,
+            endTime: endTime,
+            text: cleanTitle,
+            color: color,
+            gcalId: gcalId
+          });
+        }
+      }
+
+      // 2. 解析活動「說明 (Description)」：支援同時夾帶 TODO: 與 MEMO:
+      const rawDesc = String(ev.getDescription() || '').trim();
+      if (rawDesc && !rawDesc.includes('[AI萬用年曆自動同步]')) {
+        const plainDesc = rawDesc
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n')
+          .replace(/<[^>]+>/g, '')
+          .trim();
+
+        for (const line of plainDesc.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const tMatch = trimmed.match(/^(?:TODO|待辦|待辦事項)\s*[:：]\s*(.+)$/i);
+          const mMatch = trimmed.match(/^(?:MEMO|NOTE|備忘|註記|註記備忘)\s*[:：]\s*(.+)$/i);
+          if (tMatch) {
+            for (const t of parseTodosParam(tMatch[1])) {
+              if (!dayRec.todos.some(ex => ex.text === t.text)) {
+                dayRec.todos.push(t);
+              }
+            }
+          } else if (mMatch) {
+            const mVal = mMatch[1].trim();
+            if (mVal && (!dayRec.memo || !dayRec.memo.includes(mVal))) {
+              dayRec.memo = dayRec.memo ? (dayRec.memo.trim() + '\n' + mVal) : mVal;
+            }
+          } else if (!dayRec.memo || !dayRec.memo.includes(trimmed)) {
+            dayRec.memo = dayRec.memo ? (dayRec.memo.trim() + '\n' + trimmed) : trimmed;
+          }
+        }
+      }
+
+      if (changed) {
+        dayRec.updatedAt = Date.now();
+        dirtyDates.add(dateStr);
+      }
+    }
+
+    for (const dStr of dirtyDates) {
+      currentDays[dStr] = saveDayRecordToSheet(daysSheet, dStr, currentDays[dStr]);
+    }
+
+    if (cache) {
+      cache.put('last_gcal_pull_ts', String(Date.now()), 120);
+    }
+    return dirtyDates.size > 0;
+  } catch (err) {
+    console.warn('Google Calendar pull skipped:', err);
+    return false;
+  }
+}
+
+/**
+ * 將萬用年曆新增的行程同步寫回 Google 日曆 (避免重複建立)
+ */
+function pushDaySchedulesToGoogleCalendar(dateStr, dayRec) {
+  try {
+    if (!dayRec || !Array.isArray(dayRec.schedules) || dayRec.schedules.length === 0) return false;
+    const unsynced = dayRec.schedules.filter(s => s && s.text && !s.gcalId);
+    if (unsynced.length === 0) return false;
+
+    const cal = CalendarApp.getDefaultCalendar();
+    if (!cal) return false;
+
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dayStart = new Date(y, m - 1, d, 0, 0, 0);
+    const dayEnd = new Date(y, m - 1, d, 23, 59, 59);
+    const existingEvents = cal.getEvents(dayStart, dayEnd);
+    if (!Array.isArray(dayRec.syncedGcalIds)) dayRec.syncedGcalIds = [];
+
+    let modified = false;
+    for (const s of unsynced) {
+      const cleanText = String(s.text || '').trim();
+      if (!cleanText) continue;
+
+      const matchedEv = existingEvents.find(ev => String(ev.getTitle() || '').trim() === cleanText);
+      if (matchedEv) {
+        const evId = matchedEv.getId();
+        s.gcalId = evId;
+        if (!dayRec.syncedGcalIds.includes(evId)) dayRec.syncedGcalIds.push(evId);
+        modified = true;
+        continue;
+      }
+
+      let createdEv = null;
+      const startMatch = String(s.time || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+      if (startMatch) {
+        const sh = Number(startMatch[1]);
+        const sm = Number(startMatch[2]);
+        const startDt = new Date(y, m - 1, d, sh, sm, 0);
+        let endDt = new Date(startDt.getTime() + 60 * 60 * 1000);
+        const endMatch = String(s.endTime || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+        if (endMatch) {
+          const candidateEnd = new Date(y, m - 1, d, Number(endMatch[1]), Number(endMatch[2]), 0);
+          if (candidateEnd > startDt) endDt = candidateEnd;
+        }
+        createdEv = cal.createEvent(cleanText, startDt, endDt, {
+          description: '[AI萬用年曆自動同步]'
+        });
+      } else {
+        createdEv = cal.createAllDayEvent(cleanText, new Date(y, m - 1, d, 12, 0, 0), {
+          description: '[AI萬用年曆自動同步]'
+        });
+      }
+
+      if (createdEv) {
+        const newId = createdEv.getId();
+        s.gcalId = newId;
+        if (!dayRec.syncedGcalIds.includes(newId)) dayRec.syncedGcalIds.push(newId);
+        modified = true;
+      }
+    }
+    return modified;
+  } catch (err) {
+    console.warn('Google Calendar push skipped:', err);
+    return false;
+  }
 }
 
 /**
@@ -435,6 +682,7 @@ function upsertCalendarEntry(payload) {
     }
 
     existing.updatedAt = Date.now();
+    pushDaySchedulesToGoogleCalendar(dateStr, existing);
     const savedRec = saveDayRecordToSheet(daysSheet, dateStr, existing);
 
     // 5. 若有傳入本週重點備忘 (weekKey + weekMemo)
@@ -479,6 +727,9 @@ function syncCalendarBatch(payload) {
 
       const inUpdated = Number(inRec.updatedAt) || 0;
       const cloudUpdated = Number(cloudRec?.updatedAt) || 0;
+      const combinedGcalIds = [
+        ...new Set([...(cloudRec?.syncedGcalIds || []), ...(inRec.syncedGcalIds || [])])
+      ];
 
       // 若是前端明確指定編輯覆蓋該日 (replaceDates) 或前端時間戳較新，以最新編輯為準；否則進行智慧聯集合併
       if (!cloudRec || replaceDayKeys.has(dateStr) || (inUpdated > 0 && inUpdated >= cloudUpdated)) {
@@ -487,8 +738,12 @@ function syncCalendarBatch(payload) {
           todos: Array.isArray(inRec.todos) ? inRec.todos : [],
           memo: String(inRec.memo ?? ''),
           customHoliday: inRec.customHoliday || null,
+          syncedGcalIds: combinedGcalIds,
           updatedAt: inUpdated || Date.now()
         };
+        if (replaceDayKeys.has(dateStr) || inUpdated > cloudUpdated) {
+          pushDaySchedulesToGoogleCalendar(dateStr, merged);
+        }
         current.days[dateStr] = saveDayRecordToSheet(daysSheet, dateStr, merged);
       } else if (hasContent && cloudRec) {
         // 聯集合併：保留雲端既有項目並補上本機獨有項目
@@ -514,11 +769,15 @@ function syncCalendarBatch(payload) {
           todos: mergedTodos,
           memo: mergedMemo,
           customHoliday: cloudRec.customHoliday || inRec.customHoliday || null,
+          syncedGcalIds: combinedGcalIds,
           updatedAt: Math.max(cloudUpdated, inUpdated, Date.now())
         };
         current.days[dateStr] = saveDayRecordToSheet(daysSheet, dateStr, merged);
       }
     }
+
+    // 從 Google Calendar 拉取最新活動（自動轉為萬用年曆的行程 / 待辦 / 備忘）
+    pullFromGoogleCalendar(daysSheet, current.days, Boolean(payload.forceGcal));
 
     const incomingWeeks = payload.weekMemos || {};
     for (const [wKey, wVal] of Object.entries(incomingWeeks)) {
@@ -551,7 +810,9 @@ function doGet(e) {
   const action = params.action || '';
 
   if (action === 'sync' || action === 'get') {
+    const { daysSheet } = ensureSheets();
     const data = readAllCalendarData();
+    pullFromGoogleCalendar(daysSheet, data.days, params.forceGcal === '1');
     return ContentService
       .createTextOutput(JSON.stringify({ ok: true, ...data }))
       .setMimeType(ContentService.MimeType.JSON);
