@@ -20,7 +20,10 @@
 
 const SHEET_DAYS = '每日記事';
 const SHEET_WEEKS = '本週重點備忘';
+const SHEET_ART = '月份畫作設定';
 const VALID_COLORS = ['sky', 'emerald', 'amber', 'rose', 'violet'];
+const ART_CHUNK_SIZE = 45000;
+const ART_MAX_CHUNKS = 5;
 
 /**
  * 🔑 首次啟用 Google 日曆同步授權專用（在 Apps Script 編輯器頂端直接點「▶ 執行」即可一鍵核准日曆權限）
@@ -76,7 +79,33 @@ function ensureSheets() {
     weeksSheet.setColumnWidth(3, 160);
   }
 
-  return { ss, daysSheet, weeksSheet };
+  let artSheet = ss.getSheetByName(SHEET_ART);
+  if (!artSheet) {
+    artSheet = ss.insertSheet(SHEET_ART);
+    artSheet.appendRow([
+      '年月 (YYYY-MM)',
+      '🎨 畫作題詞',
+      '📐 顯示模式',
+      '🎯 焦點位置 (posY)',
+      '更新時間戳 (updatedAt)',
+      '最後更新時間',
+      '圖檔分段1',
+      '圖檔分段2',
+      '圖檔分段3',
+      '圖檔分段4',
+      '圖檔分段5'
+    ]);
+    artSheet.setFrozenRows(1);
+    artSheet.getRange('A1:K1').setFontWeight('bold').setBackground('#0f172a').setFontColor('#f8fafc');
+    artSheet.setColumnWidth(1, 120);
+    artSheet.setColumnWidth(2, 220);
+    artSheet.setColumnWidth(3, 100);
+    artSheet.setColumnWidth(4, 120);
+    artSheet.setColumnWidth(5, 140);
+    artSheet.setColumnWidth(6, 160);
+  }
+
+  return { ss, daysSheet, weeksSheet, artSheet };
 }
 
 function makeId() {
@@ -244,9 +273,10 @@ function formatTodosReadable(todos) {
  * 讀取試算表中所有的 days 與 weekMemos
  */
 function readAllCalendarData() {
-  const { daysSheet, weeksSheet } = ensureSheets();
+  const { daysSheet, weeksSheet, artSheet } = ensureSheets();
   const days = {};
   const weekMemos = {};
+  const monthArt = {};
 
   const dLast = daysSheet.getLastRow();
   if (dLast >= 2) {
@@ -300,7 +330,39 @@ function readAllCalendarData() {
     }
   }
 
-  return { days, weekMemos, serverTime: Date.now() };
+  if (artSheet) {
+    const aLast = artSheet.getLastRow();
+    if (aLast >= 2) {
+      const aRows = artSheet.getRange(2, 1, aLast - 1, 11).getValues();
+      for (const row of aRows) {
+        let ymKey = row[0];
+        if (ymKey instanceof Date) {
+          ymKey = Utilities.formatDate(ymKey, 'Asia/Taipei', 'yyyy-MM');
+        } else {
+          ymKey = String(ymKey || '').trim();
+        }
+        if (!/^\d{4}-\d{2}$/.test(ymKey)) continue;
+
+        const caption = String(row[1] ?? '');
+        const fitMode = String(row[2] || 'cover').trim() === 'contain' ? 'contain' : 'cover';
+        const posY = row[3] !== '' && row[3] !== null && row[3] !== undefined ? Number(row[3]) : 50;
+        const updatedAt = Number(row[4]) || 0;
+        const joinedDataUrl = [row[6], row[7], row[8], row[9], row[10]]
+          .map(c => String(c || ''))
+          .join('');
+
+        monthArt[ymKey] = {
+          caption: caption,
+          fitMode: fitMode,
+          posY: Number.isFinite(posY) ? posY : 50,
+          customDataUrl: joinedDataUrl.startsWith('data:image/') ? joinedDataUrl : null,
+          updatedAt: updatedAt
+        };
+      }
+    }
+  }
+
+  return { days, weekMemos, monthArt, serverTime: Date.now() };
 }
 
 /**
@@ -362,6 +424,58 @@ function saveWeekMemoToSheet(weeksSheet, weekKey, memoText) {
     }
   }
   weeksSheet.appendRow(rowValues);
+}
+
+function saveMonthArtToSheet(artSheet, ymKey, artRec) {
+  if (!artSheet || !/^\d{4}-\d{2}$/.test(ymKey)) return null;
+  const rawUrl = String(artRec.customDataUrl || '');
+  const chunks = ['', '', '', '', ''];
+  if (rawUrl.startsWith('data:image/') && rawUrl.length <= ART_CHUNK_SIZE * ART_MAX_CHUNKS) {
+    for (let i = 0; i < ART_MAX_CHUNKS; i++) {
+      chunks[i] = rawUrl.slice(i * ART_CHUNK_SIZE, (i + 1) * ART_CHUNK_SIZE);
+    }
+  }
+
+  const cleanArt = {
+    caption: String(artRec.caption ?? ''),
+    fitMode: artRec.fitMode === 'contain' ? 'contain' : 'cover',
+    posY: Number.isFinite(Number(artRec.posY)) ? Number(artRec.posY) : 50,
+    customDataUrl: chunks[0] ? chunks.join('') : null,
+    updatedAt: Number(artRec.updatedAt) || Date.now()
+  };
+
+  const rowValues = [
+    ymKey,
+    cleanArt.caption,
+    cleanArt.fitMode,
+    cleanArt.posY,
+    cleanArt.updatedAt,
+    getNowTimestampStr(),
+    chunks[0],
+    chunks[1],
+    chunks[2],
+    chunks[3],
+    chunks[4]
+  ];
+
+  const lastRow = artSheet.getLastRow();
+  if (lastRow >= 2) {
+    const keyCol = artSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < keyCol.length; i++) {
+      let existingKey = keyCol[i][0];
+      if (existingKey instanceof Date) {
+        existingKey = Utilities.formatDate(existingKey, 'Asia/Taipei', 'yyyy-MM');
+      } else {
+        existingKey = String(existingKey || '').trim();
+      }
+      if (existingKey === ymKey) {
+        artSheet.getRange(i + 2, 1, 1, 11).setValues([rowValues]);
+        return cleanArt;
+      }
+    }
+  }
+  artSheet.appendRow(rowValues);
+  return cleanArt;
 }
 
 /**
@@ -719,7 +833,7 @@ function syncCalendarBatch(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const { daysSheet, weeksSheet } = ensureSheets();
+    const { daysSheet, weeksSheet, artSheet } = ensureSheets();
     const current = readAllCalendarData();
 
     const incomingDays = payload.days || {};
@@ -772,10 +886,32 @@ function syncCalendarBatch(payload) {
       current.weekMemos[wKey] = text;
     }
 
+    const incomingMonthArt = payload.monthArt || {};
+    for (const [ymKey, inArt] of Object.entries(incomingMonthArt)) {
+      if (!/^\d{4}-\d{2}$/.test(ymKey) || !inArt) continue;
+      const cloudArt = current.monthArt[ymKey];
+      const inUpdated = Number(inArt.updatedAt) || 0;
+      const cloudUpdated = Number(cloudArt?.updatedAt) || 0;
+      if (!cloudArt || inUpdated >= cloudUpdated) {
+        const mergedArt = {
+          caption: inArt.caption !== undefined ? String(inArt.caption) : (cloudArt?.caption || ''),
+          fitMode: inArt.fitMode || cloudArt?.fitMode || 'cover',
+          posY: inArt.posY !== undefined ? Number(inArt.posY) : (cloudArt?.posY ?? 50),
+          customDataUrl: inArt.customDataUrl !== undefined ? inArt.customDataUrl : (cloudArt?.customDataUrl || null),
+          updatedAt: Math.max(inUpdated, cloudUpdated + 1, Date.now())
+        };
+        const savedArt = saveMonthArtToSheet(artSheet, ymKey, mergedArt);
+        if (savedArt) {
+          current.monthArt[ymKey] = savedArt;
+        }
+      }
+    }
+
     return {
       ok: true,
       days: current.days,
       weekMemos: current.weekMemos,
+      monthArt: current.monthArt,
       serverTime: Date.now()
     };
   } finally {

@@ -654,6 +654,7 @@ const IDB_STORE = 'appStateStore';
 const IDB_KEY = 'universal_calendar_data';
 const CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbw52alTyL-zPAYH6GKJHb3vED2smOanSX7W2BdiRdRQWJgvv0nrvIe9MLKdyHsJueqD/exec';
 const PENDING_DATES_KEY = 'antigravity_pending_replace_dates_v1';
+const PENDING_ART_KEY = 'antigravity_pending_month_art_v1';
 let saveTimer = null;
 let cloudSyncInFlight = false;
 let pendingCloudSyncOptions = null;
@@ -668,10 +669,26 @@ const pendingCloudReplaceDates = new Set(
     }
   })()
 );
+const pendingCloudMonthArtKeys = new Set(
+  (() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PENDING_ART_KEY) || '[]');
+      return Array.isArray(saved) ? saved : [];
+    } catch (_) {
+      return [];
+    }
+  })()
+);
 
 function persistPendingReplaceDates() {
   try {
     localStorage.setItem(PENDING_DATES_KEY, JSON.stringify([...pendingCloudReplaceDates]));
+  } catch (_) {}
+}
+
+function persistPendingMonthArtKeys() {
+  try {
+    localStorage.setItem(PENDING_ART_KEY, JSON.stringify([...pendingCloudMonthArtKeys]));
   } catch (_) {}
 }
 
@@ -681,6 +698,49 @@ function markDayUpdated(dateStr = state.currentDateStr) {
   rec.updatedAt = Date.now();
   pendingCloudReplaceDates.add(dateStr);
   persistPendingReplaceDates();
+}
+
+function markMonthArtUpdated(ymKey = getYearMonthKey(state.currentYear, state.currentMonth)) {
+  if (!ymKey || !/^\d{4}-\d{2}$/.test(ymKey)) return;
+  const [y, m] = ymKey.split('-').map(Number);
+  const cfg = ensureMonthArtConfig(y, m);
+  cfg.updatedAt = Date.now();
+  pendingCloudMonthArtKeys.add(ymKey);
+  persistPendingMonthArtKeys();
+}
+
+async function compressArtworkDataUrl(dataUrl, maxDim = 1280, quality = 0.80) {
+  if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return null;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      let out = canvas.toDataURL('image/jpeg', quality);
+      if (out.length > 180000) {
+        out = canvas.toDataURL('image/jpeg', 0.65);
+      }
+      if (out.length > 210000) {
+        const canvas2 = document.createElement('canvas');
+        canvas2.width = Math.round(width * 0.72);
+        canvas2.height = Math.round(height * 0.72);
+        canvas2.getContext('2d').drawImage(img, 0, 0, canvas2.width, canvas2.height);
+        out = canvas2.toDataURL('image/jpeg', 0.62);
+      }
+      resolve(out);
+    };
+    img.onerror = () => resolve(dataUrl.length <= 210000 ? dataUrl : null);
+    img.src = dataUrl;
+  });
 }
 
 function openCalendarDB() {
@@ -809,21 +869,25 @@ function mergeLoadedData(incoming) {
   if (incoming.monthArt && typeof incoming.monthArt === 'object') {
     for (const [k, val] of Object.entries(incoming.monthArt)) {
       if (!val || typeof val !== 'object') continue;
-      // 自動相容舊版 1~12 key -> 轉換為 "2027-01" ~ "2027-12"
+      let ymKey = k;
       if (/^\d{1,2}$/.test(k)) {
-        const ymKey = getYearMonthKey(2027, Number(k));
+        ymKey = getYearMonthKey(2027, Number(k));
+      }
+      if (!/^\d{4}-\d{2}$/.test(ymKey)) continue;
+      const [y, m] = ymKey.split('-').map(Number);
+      const curArt = state.data.monthArt[ymKey] || ensureMonthArtConfig(y, m);
+      const curTime = Number(curArt.updatedAt) || 0;
+      const inTime = Number(val.updatedAt) || 0;
+
+      if (!pendingCloudMonthArtKeys.has(ymKey) && (inTime > curTime || (curTime === 0 && inTime === 0))) {
         state.data.monthArt[ymKey] = {
-          ...ensureMonthArtConfig(2027, Number(k)),
-          ...state.data.monthArt[ymKey],
-          ...val
+          ...curArt,
+          ...val,
+          customDataUrl: val.customDataUrl !== undefined ? val.customDataUrl : (curArt.customDataUrl || null),
+          updatedAt: Math.max(curTime, inTime)
         };
-      } else if (/^\d{4}-\d{2}$/.test(k)) {
-        const [y, m] = k.split('-').map(Number);
-        state.data.monthArt[k] = {
-          ...ensureMonthArtConfig(y, m),
-          ...state.data.monthArt[k],
-          ...val
-        };
+      } else if (!curArt.customDataUrl && val.customDataUrl) {
+        curArt.customDataUrl = val.customDataUrl;
       }
     }
   }
@@ -954,6 +1018,24 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
       }
 
       const replaceDates = [...pendingCloudReplaceDates];
+      const artKeysToPush = [...pendingCloudMonthArtKeys];
+      const monthArtPayload = {};
+      for (const ymKey of artKeysToPush) {
+        const artCfg = state.data.monthArt[ymKey];
+        if (!artCfg) continue;
+        let cloudDataUrl = artCfg.customDataUrl || null;
+        if (cloudDataUrl && cloudDataUrl.length > 210000) {
+          cloudDataUrl = await compressArtworkDataUrl(cloudDataUrl);
+          if (cloudDataUrl) artCfg.customDataUrl = cloudDataUrl;
+        }
+        monthArtPayload[ymKey] = {
+          caption: artCfg.caption ?? '',
+          fitMode: artCfg.fitMode || 'cover',
+          posY: artCfg.posY ?? 50,
+          customDataUrl: cloudDataUrl,
+          updatedAt: Number(artCfg.updatedAt) || Date.now()
+        };
+      }
 
       const res = await fetch(CLOUD_SYNC_URL, {
         method: 'POST',
@@ -962,6 +1044,7 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
           action: 'sync_batch',
           days: lightDays,
           weekMemos: state.data.weekMemos || {},
+          monthArt: monthArtPayload,
           replaceDates,
           forceGcal: !quiet
         })
@@ -973,6 +1056,10 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
             pendingCloudReplaceDates.delete(d);
           }
           persistPendingReplaceDates();
+          for (const k of artKeysToPush) {
+            pendingCloudMonthArtKeys.delete(k);
+          }
+          persistPendingMonthArtKeys();
         }
       }
     } else {
@@ -984,15 +1071,62 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
 
     if (cloudPayload && cloudPayload.ok) {
       lastCloudPullTime = Date.now();
+      const cloudMonthArt = cloudPayload.monthArt || {};
+
+      // 自動偵測本機已有自訂圖片 (例如先前在瀏覽器上傳的 2026-12 圖檔) 但雲端尚未建立紀錄的月份，自動排入雲端上傳
+      let foundUnsyncedLocalArt = false;
+      for (const [ymKey, localArt] of Object.entries(state.data.monthArt || {})) {
+        if (
+          /^\d{4}-\d{2}$/.test(ymKey) &&
+          localArt?.customDataUrl &&
+          !cloudMonthArt[ymKey]?.customDataUrl &&
+          !pendingCloudMonthArtKeys.has(ymKey)
+        ) {
+          markMonthArtUpdated(ymKey);
+          foundUnsyncedLocalArt = true;
+        }
+      }
+
       mergeLoadedData({
         days: cloudPayload.days || {},
-        weekMemos: cloudPayload.weekMemos || {}
+        weekMemos: cloudPayload.weekMemos || {},
+        monthArt: cloudMonthArt
       });
+
+      // 若在 .vbs 本機伺服器環境下收到雲端同步來的新月份圖片，順便存一份至本機 images/ 資料夾
+      for (const [ymKey, cArt] of Object.entries(cloudMonthArt)) {
+        if (cArt?.customDataUrl && !state.folderImages[ymKey]) {
+          const [y, m] = ymKey.split('-').map(Number);
+          fetch('/api/upload-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              year: y,
+              month: m,
+              filename: `${ymKey}.jpg`,
+              dataUrl: cArt.customDataUrl
+            })
+          })
+            .then(r => (r.ok ? r.json() : null))
+            .then(out => {
+              if (out?.ok && out.imageUrl) {
+                state.folderImages[ymKey] = out.imageUrl;
+              }
+            })
+            .catch(() => {});
+        }
+      }
+
       await persistLocalStateOnly();
+      renderArtworkSection();
       if (state.currentView === 'month') renderMonthView();
       else if (state.currentView === 'week') renderWeekView();
       else if (state.currentView === 'day') renderDayView();
       setSaveStatus('☁️ 已雲端同步');
+
+      if (foundUnsyncedLocalArt) {
+        pendingCloudSyncOptions = { pushLocal: true, quiet: true };
+      }
       return true;
     }
   } catch (err) {
@@ -1697,15 +1831,17 @@ async function handleArtworkFile(file) {
   const m = state.currentMonth;
   const ymKey = getYearMonthKey(y, m);
   const artCfg = ensureMonthArtConfig(y, m);
-  setSaveStatus('⏳ 正在儲存本月圖片...');
+  setSaveStatus('⏳ 正在處理並同步本月圖片...');
 
   const reader = new FileReader();
   reader.onload = async () => {
-    const dataUrl = reader.result;
-    // 1. 同時保存在 IndexedDB 狀態中 (讓匯出備份與 PWA 離線皆能完整保留)
-    artCfg.customDataUrl = dataUrl;
+    const rawDataUrl = reader.result;
+    // 1. 壓縮成高畫質跨裝置雲端同步格式，同時保留於 IndexedDB 與雲端試算表，讓電腦、VBS、手機三端自動同步圖片
+    const compressedDataUrl = await compressArtworkDataUrl(rawDataUrl);
+    artCfg.customDataUrl = compressedDataUrl || rawDataUrl;
+    markMonthArtUpdated(ymKey);
 
-    // 2. 若本機有啟動 server.mjs，同步存成實體圖檔 images/YYYY-MM.png
+    // 2. 若本機有啟動 server.mjs (.vbs 模式)，同步存成實體圖檔 images/YYYY-MM
     try {
       const res = await fetch('/api/upload-image', {
         method: 'POST',
@@ -1714,23 +1850,18 @@ async function handleArtworkFile(file) {
           year: y,
           month: m,
           filename: file.name,
-          dataUrl
+          dataUrl: rawDataUrl
         })
       });
       if (res.ok) {
         const out = await res.json();
         if (out.ok && out.imageUrl) {
           state.folderImages[ymKey] = out.imageUrl;
-          artCfg.customDataUrl = null;
-          renderArtworkSection();
-          triggerAutoSave();
-          setSaveStatus(`✓ 已存入 images/${ymKey}`);
-          return;
         }
       }
     } catch (_) {}
 
-    // 3. 純 PWA / 瀏覽器模式：直接儲存於 IndexedDB
+    // 3. 立即渲染並觸發自動存檔與雲端圖片同步
     renderArtworkSection();
     triggerAutoSave();
   };
@@ -1745,6 +1876,7 @@ async function resetCurrentMonthArtwork() {
 
   artCfg.customDataUrl = null;
   delete state.folderImages[ymKey];
+  markMonthArtUpdated(ymKey);
 
   try {
     await fetch('/api/delete-image', {
@@ -1898,6 +2030,7 @@ async function initApp() {
   document.getElementById('btn-fit-mode').addEventListener('click', () => {
     const cfg = ensureMonthArtConfig(state.currentYear, state.currentMonth);
     cfg.fitMode = cfg.fitMode === 'contain' ? 'cover' : 'contain';
+    markMonthArtUpdated();
     renderArtworkSection();
     triggerAutoSave();
   });
@@ -1907,6 +2040,7 @@ async function initApp() {
     const cfg = ensureMonthArtConfig(state.currentYear, state.currentMonth);
     cfg.posY = val;
     document.getElementById('artwork-img').style.objectPosition = `50% ${val}%`;
+    markMonthArtUpdated();
     triggerAutoSave();
   });
 
@@ -1914,6 +2048,7 @@ async function initApp() {
   document.getElementById('artwork-caption-input').addEventListener('input', (e) => {
     const cfg = ensureMonthArtConfig(state.currentYear, state.currentMonth);
     cfg.caption = e.target.value;
+    markMonthArtUpdated();
     triggerAutoSave();
   });
 
@@ -2310,14 +2445,14 @@ async function initApp() {
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && Date.now() - lastCloudPullTime > 5000) {
-      syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0, quiet: true });
+      syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0 || pendingCloudMonthArtKeys.size > 0, quiet: true });
     }
   });
 
   // 背景定時自動同步：當電腦版或手機版開著時，每 20 秒自動從雲端拉取最新異動（若有尚未上傳的本機修改則一併推送）
   setInterval(() => {
     if (document.visibilityState === 'visible' && !cloudSyncInFlight && Date.now() - lastCloudPullTime > 18000) {
-      syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0, quiet: true });
+      syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0 || pendingCloudMonthArtKeys.size > 0, quiet: true });
     }
   }, 20000);
 
@@ -2541,12 +2676,12 @@ async function initApp() {
     } catch (_) {}
   } else if (jumpDate && /^\d{4}-\d{2}-\d{2}$/.test(jumpDate)) {
     openDayView(jumpDate);
-    syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0, quiet: false });
+    syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0 || pendingCloudMonthArtKeys.size > 0, quiet: false });
   } else {
     // 預設顯示當日的日曆頁面 (Day View)
     openDayView(todayDateStr);
     // 啟動後自動與 Google 雲端試算表同步（若有未上傳異動則先推後拉，否則直接拉取雲端最新狀態）
-    syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0, quiet: false });
+    syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0 || pendingCloudMonthArtKeys.size > 0, quiet: false });
   }
 }
 
