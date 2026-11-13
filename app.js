@@ -2272,26 +2272,16 @@ async function initApp() {
     }
   });
 
-  // 檢查網址是否帶有 ?date=YYYY-MM-DD 與快速寫入參數 (sched / todo / memo / weekMemo)
-  const urlParams = new URLSearchParams(window.location.search);
-  const jumpDate = urlParams.get('date');
-  const urlSched = urlParams.get('sched') || urlParams.get('schedules') || '';
-  const urlTodo = urlParams.get('todo') || urlParams.get('todos') || '';
-  const urlMemo = urlParams.get('memo') || '';
-  const urlWeekKey = urlParams.get('weekKey') || '';
-  const urlWeekMemo = urlParams.get('weekMemo') || '';
-
-  const targetWriteDate = (jumpDate && /^\d{4}-\d{2}-\d{2}$/.test(jumpDate))
-    ? jumpDate
-    : formatDateStr(now.getFullYear(), now.getMonth() + 1, now.getDate());
-
-  const hasUrlWrite = Boolean(urlSched || urlTodo || urlMemo || (urlWeekKey && urlWeekMemo));
-  if (hasUrlWrite) {
-    const dayRec = ensureDayRecord(targetWriteDate);
+  function applyExternalPayload({ date, sched = '', todo = '', memo = '', weekKey = '', weekMemo = '' }) {
+    const targetDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date.trim()))
+      ? date.trim()
+      : formatDateStr(now.getFullYear(), now.getMonth() + 1, now.getDate());
+    const dayRec = ensureDayRecord(targetDate);
     const validColors = ['sky', 'emerald', 'amber', 'rose', 'violet'];
+    let addedCount = 0;
 
-    if (urlSched) {
-      const items = urlSched.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
+    if (sched) {
+      const items = String(sched).split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
       for (const item of items) {
         let time = '';
         let endTime = '';
@@ -2310,7 +2300,14 @@ async function initApp() {
             time = tPart;
           }
         } else {
-          text = item;
+          const m = item.match(/^(\d{1,2}:\d{2})(?:\s*[~-]\s*(\d{1,2}:\d{2}))?\s+(.+)$/);
+          if (m) {
+            time = m[1];
+            endTime = m[2] || '';
+            text = m[3].trim();
+          } else {
+            text = item;
+          }
         }
         if (!validColors.includes(color)) color = 'sky';
         if (text && !dayRec.schedules.some(s => s.time === time && s.text === text)) {
@@ -2321,13 +2318,14 @@ async function initApp() {
             text,
             color
           });
+          addedCount++;
         }
       }
       dayRec.schedules.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
     }
 
-    if (urlTodo) {
-      const todos = urlTodo.split(/[;\n|]+/).map(s => s.trim()).filter(Boolean);
+    if (todo) {
+      const todos = String(todo).split(/[;\n|]+/).map(s => s.trim()).filter(Boolean);
       for (const tText of todos) {
         if (!dayRec.todos.some(t => t.text === tText)) {
           dayRec.todos.push({
@@ -2335,34 +2333,153 @@ async function initApp() {
             text: tText,
             done: false
           });
+          addedCount++;
         }
       }
     }
 
-    if (urlMemo) {
-      const cleanMemo = urlMemo.trim();
+    if (memo) {
+      const cleanMemo = String(memo).trim();
       if (cleanMemo) {
         if (!dayRec.memo) {
           dayRec.memo = cleanMemo;
         } else if (!dayRec.memo.includes(cleanMemo)) {
           dayRec.memo = dayRec.memo.trim() + '\n' + cleanMemo;
         }
+        addedCount++;
       }
     }
 
-    if (urlWeekKey && urlWeekMemo) {
-      state.data.weekMemos[urlWeekKey] = urlWeekMemo.trim();
+    if (weekKey && weekMemo) {
+      state.data.weekMemos[weekKey.trim()] = String(weekMemo).trim();
+      addedCount++;
     }
 
+    openDayView(targetDate);
+    triggerAutoSave(targetDate);
+    setSaveStatus(`✅ 已寫入 ${targetDate} 並同步雲端`);
+    return { ok: addedCount > 0, targetDate };
+  }
+
+  function parseAndApplyAiText(rawText) {
+    if (!rawText || !String(rawText).trim()) return false;
+    const text = String(rawText).trim();
+
+    // 1. 若貼上的是包含 ?date=... 的網址
+    if (text.includes('date=') || text.includes('sched=') || text.includes('todo=') || text.includes('memo=')) {
+      const qIdx = text.indexOf('?');
+      const qs = qIdx >= 0 ? text.slice(qIdx + 1).split(/\s/)[0] : text;
+      const p = new URLSearchParams(qs);
+      if (p.get('date') || p.get('sched') || p.get('todo') || p.get('memo')) {
+        applyExternalPayload({
+          date: p.get('date') || '',
+          sched: p.get('sched') || p.get('schedules') || '',
+          todo: p.get('todo') || p.get('todos') || '',
+          memo: p.get('memo') || '',
+          weekKey: p.get('weekKey') || '',
+          weekMemo: p.get('weekMemo') || ''
+        });
+        return true;
+      }
+    }
+
+    // 2. 若貼上的是 DATE: / SCHED: / TODO: / MEMO: 結構化文字區塊
+    let date = '';
+    const schedList = [];
+    const todoList = [];
+    const memoList = [];
+    let weekKey = '';
+    let weekMemo = '';
+
+    for (const line of text.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('```')) continue;
+      const m = trimmed.match(/^(DATE|日期|SCHED|SCHEDULE|行程|行事安排|TODO|待辦|待辦事項|MEMO|NOTE|備忘|註記備忘|WEEK|本週重點)\s*[:：]\s*(.+)$/i);
+      if (m) {
+        const key = m[1].toUpperCase();
+        const val = m[2].trim();
+        if (!val || val === '無' || val === 'None' || val === '-') continue;
+        if (key === 'DATE' || key === '日期') {
+          const dm = val.match(/\d{4}-\d{2}-\d{2}/);
+          if (dm) date = dm[0];
+        } else if (['SCHED', 'SCHEDULE', '行程', '行事安排'].includes(key)) {
+          schedList.push(val);
+        } else if (['TODO', '待辦', '待辦事項'].includes(key)) {
+          todoList.push(val);
+        } else if (['MEMO', 'NOTE', '備忘', '註記備忘'].includes(key)) {
+          memoList.push(val);
+        } else if (['WEEK', '本週重點'].includes(key)) {
+          const parts = val.split('|');
+          if (parts.length >= 2) {
+            weekKey = parts[0].trim();
+            weekMemo = parts.slice(1).join('|').trim();
+          }
+        }
+      }
+    }
+
+    if (date || schedList.length > 0 || todoList.length > 0 || memoList.length > 0) {
+      applyExternalPayload({
+        date: date || state.currentDateStr,
+        sched: schedList.join('; '),
+        todo: todoList.join('; '),
+        memo: memoList.join('\n'),
+        weekKey,
+        weekMemo
+      });
+      return true;
+    }
+
+    return false;
+  }
+
+  // 「✨ AI貼上」按鈕：一鍵讀取從 Gemini Skill 複製的行程/待辦/備忘代碼區塊或網址
+  document.getElementById('btn-ai-paste')?.addEventListener('click', async () => {
+    let clipText = '';
+    if (navigator.clipboard?.readText) {
+      try {
+        clipText = await navigator.clipboard.readText();
+      } catch (_) {}
+    }
+    if (!clipText || !parseAndApplyAiText(clipText)) {
+      const manual = prompt(
+        '請長按貼上從 Gemini 複製的「萬用年曆快寫區塊」或連結：',
+        clipText || 'DATE: 2026-11-14\nSCHED: 10:00~11:30|門診會議|sky\nTODO: 確認簡報\nMEMO: 隨筆備忘'
+      );
+      if (manual && !parseAndApplyAiText(manual)) {
+        alert('未偵測到標準格式（請包含 DATE: / SCHED: / TODO: / MEMO: 或萬用年曆連結）。');
+      }
+    }
+  });
+
+  // 檢查網址是否帶有 ?date=YYYY-MM-DD 與快速寫入參數 (sched / todo / memo / weekMemo)
+  const urlParams = new URLSearchParams(window.location.search);
+  const jumpDate = urlParams.get('date');
+  const urlSched = urlParams.get('sched') || urlParams.get('schedules') || '';
+  const urlTodo = urlParams.get('todo') || urlParams.get('todos') || '';
+  const urlMemo = urlParams.get('memo') || '';
+  const urlWeekKey = urlParams.get('weekKey') || '';
+  const urlWeekMemo = urlParams.get('weekMemo') || '';
+
+  const targetWriteDate = (jumpDate && /^\d{4}-\d{2}-\d{2}$/.test(jumpDate))
+    ? jumpDate
+    : formatDateStr(now.getFullYear(), now.getMonth() + 1, now.getDate());
+
+  const hasUrlWrite = Boolean(urlSched || urlTodo || urlMemo || (urlWeekKey && urlWeekMemo));
+  if (hasUrlWrite) {
+    applyExternalPayload({
+      date: targetWriteDate,
+      sched: urlSched,
+      todo: urlTodo,
+      memo: urlMemo,
+      weekKey: urlWeekKey,
+      weekMemo: urlWeekMemo
+    });
     // 清除網址列上的單次寫入參數，避免重新整理頁面時重複觸發
     try {
       const cleanUrl = `${window.location.pathname}?date=${encodeURIComponent(targetWriteDate)}`;
       window.history.replaceState({}, '', cleanUrl);
     } catch (_) {}
-
-    openDayView(targetWriteDate);
-    triggerAutoSave(targetWriteDate);
-    setSaveStatus('✅ 已從 AI 連結寫入並同步雲端');
   } else if (jumpDate && /^\d{4}-\d{2}-\d{2}$/.test(jumpDate)) {
     openDayView(jumpDate);
     syncWithCloud({ pushLocal: true, quiet: false });
