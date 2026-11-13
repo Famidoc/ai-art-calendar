@@ -22,6 +22,17 @@ const SHEET_DAYS = '每日記事';
 const SHEET_WEEKS = '本週重點備忘';
 const VALID_COLORS = ['sky', 'emerald', 'amber', 'rose', 'violet'];
 
+/**
+ * 🔑 首次啟用 Google 日曆同步授權專用（在 Apps Script 編輯器頂端直接點「▶ 執行」即可一鍵核准日曆權限）
+ */
+function authorizeGoogleCalendar() {
+  const cal = CalendarApp.getDefaultCalendar();
+  const { ss, daysSheet } = ensureSheets();
+  const data = readAllCalendarData();
+  const res = pullFromGoogleCalendar(daysSheet, data.days, true);
+  Logger.log('✅ Google 日曆雙向橋接授權成功！日曆：' + (cal ? cal.getName() : '') + '，同步結果：' + JSON.stringify(res));
+}
+
 function ensureSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let daysSheet = ss.getSheetByName(SHEET_DAYS);
@@ -523,10 +534,10 @@ function pullFromGoogleCalendar(daysSheet, currentDays, force = false) {
     if (cache) {
       cache.put('last_gcal_pull_ts', String(Date.now()), 120);
     }
-    return dirtyDates.size > 0;
+    return { ok: true, importedDates: dirtyDates.size, totalEventsScanned: events.length };
   } catch (err) {
     console.warn('Google Calendar pull skipped:', err);
-    return false;
+    return { ok: false, error: String(err.message || err) };
   }
 }
 
@@ -812,9 +823,9 @@ function doGet(e) {
   if (action === 'sync' || action === 'get') {
     const { daysSheet } = ensureSheets();
     const data = readAllCalendarData();
-    pullFromGoogleCalendar(daysSheet, data.days, params.forceGcal === '1');
+    const gcalStatus = pullFromGoogleCalendar(daysSheet, data.days, params.forceGcal === '1');
     return ContentService
-      .createTextOutput(JSON.stringify({ ok: true, ...data }))
+      .createTextOutput(JSON.stringify({ ok: true, gcalStatus, ...data }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
