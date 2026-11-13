@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <base href="/ai-art-calendar/" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="AI 萬用年曆" />
+  <title>AI 繪圖橫式萬年桌面月曆</title>
+  <link rel="manifest" href="/ai-art-calendar/pwa/manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="widget-container" class="widget-container view-month">
+    <section id="artwork-section" class="artwork-section">
+      <div id="artwork-ZeroBg" class="artwork-blur-bg"></div>
+      <img id="artwork-img" class="artwork-img" alt="月份專屬 AI 繪圖" draggable="false" />
+      <div class="artwork-gradient-overlay"></div>
+
+      <div id="drop-overlay" class="drop-overlay hidden">
+        <div class="drop-box">
+          <span class="drop-icon">🎨</span>
+          <p>放開滑鼠，設定為 <strong id="drop-month-label">2027年 1月</strong> 的專屬 AI 繪圖（各年份獨立保存）</p>
+        </div>
+      </div>
+
+      <header class="widget-topbar">
+        <div class="drag-handle" title="按住此處可拖曳桌面月曆視窗">
+          <span id="app-badge-year" class="app-badge">2027 ART CALENDAR</span>
+          <span id="save-status" class="save-status">✓ 已自動存檔</span>
+        </div>
+
+        <div class="topbar-controls no-drag">
+          <div class="month-QuickNav">
+            <button id="btn-prev-month" class="icon-btn" title="上個月 (自動跨年)">◀</button>
+            <select id="year-select" class="year-select" title="切換年份 (萬年曆)"></select>
+            <span class="ym-divider">/</span>
+            <select id="month-select" class="month-select" title="切換月份">
+              <option value="1">01 月</option>
+              <option value="2">02 月</option>
+              <option value="3">03 月</option>
+              <option value="4">04 月</option>
+              <option value="5">05 月</option>
+              <option value="6">06 月</option>
+              <option value="7">07 月</option>
+              <option value="8">08 月</option>
+              <option value="9">09 月</option>
+              <option value="10">10 月</option>
+              <option value="11">11 月</option>
+              <option value="12">12 月</option>
+            </select>
+            <button id="btn-next-month" class="icon-btn" title="下個月 (自動跨年)">▶</button>
+            <button id="btn-go-today" class="pill-btn today-btn" title="立即跳回今天的年份與日期">📍 今日</button>
+          </div>
+
+          <div class="control-group">
+            <button id="btn-change-art" class="pill-btn" title="更換此年份本月的專屬 AI 繪圖（亦可直接將圖片拖曳至上方畫面）">
+              🖼️ 換圖
+            </button>
+            <button id="btn-reset-art" class="icon-btn hidden" title="移除本月自訂圖片，還原為預設星雲畫布">
+              ↺
+            </button>
+            <button id="btn-fit-mode" class="pill-btn" title="切換圖片滿版裁切 (Cover) / 完整顯示 (Contain)">
+              📐 滿版
+            </button>
+            <div class="focus-slider-wrap" title="上下微調圖片顯示焦點位置">
+              <span class="mini-label">焦點</span>
+              <input id="art-pos-slider" type="range" min="0" max="100" value="50" />
+            </div>
+          </div>
+
+          <div class="control-group">
+            <button id="btn-toggle-startday" class="pill-btn" title="切換每週第一天為週日或週一">
+              📅 週日始
+            </button>
+            <button id="btn-font-dec" class="icon-btn" title="縮小整體字體 (自動記憶)">A-</button>
+            <button id="btn-font-inc" class="icon-btn" title="放大整體字體 (自動記憶)">A+</button>
+            <button id="btn-cloud-sync" class="icon-btn" title="立即與 Google 雲端試算表雙向同步（支援 Gemini Skill 跨裝置寫入）">☁️</button>
+            <button id="btn-export-data" class="icon-btn" title="匯出完整備份 JSON 檔案（含各年行程與自訂圖片）">💾</button>
+            <button id="btn-import-data" class="icon-btn" title="匯入還原 JSON 備份檔案">📂</button>
+            <button id="btn-fullscreen" class="icon-btn" title="切換全螢幕無邊框模式（隱藏手機/瀏覽器頂部網址列）">⛶</button>
+            <button id="btn-install-pwa" class="pill-btn pwa-install-btn hidden" title="將此萬年曆安裝為桌面或手機獨立 App（支援離線使用）">
+              📲 安裝 App
+            </button>
+          </div>
+
+          <div class="control-group window-controls">
+            <div class="opacity-slider-wrap" title="調整月曆視窗整體透明度">
+              <span class="mini-label">透明</span>
+              <input id="window-opacity-slider" type="range" min="45" max="100" value="98" />
+            </div>
+            <button id="btn-pin-top" class="icon-btn" title="釘選在桌面最上層 (Always on Top)">📌</button>
+            <button id="btn-win-min" class="icon-btn electron-only" title="最小化視窗">─</button>
+            <button id="btn-win-close" class="icon-btn close-btn electron-only" title="關閉月曆">✕</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="artwork-caption-box no-drag">
+        <div class="month-hero-badge">
+          <span id="hero-month-num" class="hero-month-num">01</span>
+          <div class="hero-month-meta">
+            <span id="hero-month-en" class="hero-month-en">JANUARY 2027</span>
+            <span id="hero-month-lunar" class="hero-month-lunar">丁未羊年 · 端月</span>
+          </div>
+        </div>
+        <div class="artwork-title-row">
+          <input
+            id="artwork-caption-input"
+            type="text"
+            class="artwork-caption-input"
+            placeholder="點擊輸入本月 AI 繪圖作品名稱或題詞..."
+            title="點擊即可編輯此年份本月的畫作標題或心情隨筆"
+          />
+        </div>
+      </div>
+
+      <input id="file-upload-art" type="file" accept="image/*" class="hidden" />
+      <input id="file-import-json" type="file" accept=".json,application/json" class="hidden" />
+    </section>
+
+    <main id="calendar-section" class="calendar-section">
+      <div id="month-view" class="view-panel active">
+        <div class="month-grid-header" id="month-weekday-header">
+          <div class="week-menu-col-header" title="點選下方週次按鈕可進入該週「週曆」">週曆選單</div>
+        </div>
+        <div id="month-grid-body" class="month-grid-body"></div>
+      </div>
+
+      <div id="week-view" class="view-panel">
+        <div class="subview-toolbar">
+          <div class="subview-nav-left">
+            <button id="btn-week-back-month" class="back-btn">← 返回月曆</button>
+            <div class="subview-title-group">
+              <button id="btn-prev-week" class="icon-btn" title="上一週 (自動跨月/跨年)">◀</button>
+              <h2 id="week-view-title" class="subview-title">2027年 1月 · 第 1 週 (1/1 ~ 1/7)</h2>
+              <button id="btn-next-week" class="icon-btn" title="下一週 (自動跨月/跨年)">▶</button>
+            </div>
+          </div>
+          <div class="week-goal-box">
+            <span class="week-goal-label">🎯 本週重點備忘：</span>
+            <input id="week-memo-input" type="text" class="week-memo-input" placeholder="寫下這一週的核心目標、出遊計畫或重要提醒..." />
+          </div>
+        </div>
+        <div id="week-days-container" class="week-days-container"></div>
+      </div>
+
+      <div id="day-view" class="view-panel">
+        <div class="subview-toolbar">
+          <div class="subview-nav-left">
+            <button id="btn-day-back-month" class="back-btn">← 返回月曆</button>
+            <button id="btn-day-to-week" class="pill-btn">📊 看本週週曆</button>
+            <div class="subview-title-group">
+              <button id="btn-prev-day" class="icon-btn" title="前一天 (自動跨月/跨年)">◀</button>
+              <h2 id="day-view-title" class="subview-title">2027年 1月 1日 (週五)</h2>
+              <button id="btn-next-day" class="icon-btn" title="後一天 (自動跨月/跨年)">▶</button>
+            </div>
+            <div id="day-holiday-badges" class="day-holiday-badges"></div>
+            <button id="btn-toggle-day-holiday" type="button" class="pill-btn holiday-override-btn" title="手動切換此日是否為休假紅字或補班日（因應各年度彈性放假調整）">
+              🏖️ 設為休假
+            </button>
+          </div>
+          <div id="day-quick-weekbar" class="day-quick-weekbar"></div>
+        </div>
+
+        <div class="day-detail-grid">
+          <div class="day-card schedule-card">
+            <div class="day-card-header">
+              <h3>🕒 行事安排 <span id="schedule-count" class="count-badge">0</span></h3>
+              <span class="card-hint">同步顯示於月曆與週曆 · 點擊行程可編輯</span>
+            </div>
+            <form id="form-add-schedule" class="add-item-form">
+              <div class="time-range-group" title="設定開始時間與結束時間（結束時間可留空）">
+                <input id="sched-time-input" type="time" class="time-input" value="09:00" title="開始時間 (可留空代表全天)" />
+                <span class="time-range-sep">～</span>
+                <input id="sched-end-time-input" type="time" class="time-input" value="" title="結束時間 (選填，可留空)" />
+              </div>
+              <input id="sched-text-input" type="text" class="text-input" placeholder="輸入行程、門診、會議或活動..." required />
+              <div id="sched-color-picker" class="color-picker" title="選擇分類顏色">
+                <button type="button" class="color-dot active" data-color="sky" style="--dot-color: #38bdf8" title="工作/門診 (藍)"></button>
+                <button type="button" class="color-dot" data-color="rose" style="--dot-color: #fb7185" title="重要/假日 (紅)"></button>
+                <button type="button" class="color-dot" data-color="emerald" style="--dot-color: #34d399" title="生活/運動 (綠)"></button>
+                <button type="button" class="color-dot" data-color="amber" style="--dot-color: #fbbf24" title="靈感/創作 (金)"></button>
+                <button type="button" class="color-dot" data-color="violet" style="--dot-color: #a78bfa" title="休閒/家庭 (紫)"></button>
+              </div>
+              <button id="btn-submit-schedule" type="submit" class="add-btn">＋ 新增</button>
+              <button id="btn-cancel-edit-schedule" type="button" class="cancel-edit-btn hidden" title="取消修改">取消</button>
+            </form>
+            <ul id="day-schedule-list" class="item-list"></ul>
+          </div>
+
+          <div class="day-card todo-card">
+            <div class="day-card-header">
+              <h3>☑️ 待辦事項 <span id="todo-count" class="count-badge">0/0</span></h3>
+              <span class="card-hint">可勾選完成 · 按住拖曳排序</span>
+            </div>
+            <form id="form-add-todo" class="add-item-form">
+              <input id="todo-text-input" type="text" class="text-input" placeholder="新增今日待辦事項，按 Enter 新增..." required />
+              <button type="submit" class="add-btn">＋ 新增</button>
+            </form>
+            <ul id="day-todo-list" class="item-list"></ul>
+          </div>
+
+          <div id="day-memo-card" class="day-card memo-card">
+            <div class="day-card-header">
+              <h3>📝 註記與隨筆備忘 <span id="memo-img-count" class="count-badge hidden">0 圖</span></h3>
+              <div class="memo-header-actions">
+                <button id="btn-paste-memo-img" type="button" class="pill-btn memo-action-btn" title="從剪貼簿貼上截圖或圖片 (亦可直接按 Ctrl+V)">📋 貼圖</button>
+                <button id="btn-upload-memo-img" type="button" class="pill-btn memo-action-btn" title="選擇圖片或截圖檔案加入備忘">🖼️ 加圖</button>
+                <span class="card-hint">支援 Ctrl+V 貼上截圖</span>
+              </div>
+            </div>
+            <div id="day-memo-box" class="memo-body-box">
+              <textarea
+                id="day-memo-textarea"
+                class="memo-textarea"
+                placeholder="在此自由填寫當日註記、備忘、單車日記、AI 繪圖靈感或心情隨筆...（可直接按 Ctrl+V 貼上截圖或拖曳圖片至此）"
+              ></textarea>
+              <div id="day-memo-images" class="memo-images-grid hidden"></div>
+            </div>
+            <input id="file-upload-memo-img" type="file" accept="image/*" multiple class="hidden" />
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <div id="memo-img-lightbox" class="memo-lightbox hidden">
+      <div class="memo-lightbox-backdrop"></div>
+      <div class="memo-lightbox-content">
+        <img id="memo-lightbox-img" src="" alt="備忘錄圖片預覽" />
+        <button id="btn-close-lightbox" type="button" class="memo-lightbox-close" title="關閉預覽 (Esc)">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
