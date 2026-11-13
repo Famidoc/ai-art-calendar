@@ -914,7 +914,6 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
       }
 
       const replaceDates = [...pendingCloudReplaceDates];
-      pendingCloudReplaceDates.clear();
 
       const res = await fetch(CLOUD_SYNC_URL, {
         method: 'POST',
@@ -928,6 +927,9 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
       });
       if (res.ok) {
         cloudPayload = await res.json();
+        if (cloudPayload && cloudPayload.ok) {
+          pendingCloudReplaceDates.clear();
+        }
       }
     } else {
       const res = await fetch(`${CLOUD_SYNC_URL}?action=sync&t=${Date.now()}`);
@@ -2262,15 +2264,22 @@ async function initApp() {
 
   window.addEventListener('focus', () => {
     if (Date.now() - lastCloudPullTime > 5000) {
-      syncWithCloud({ pushLocal: false, quiet: true });
+      syncWithCloud({ pushLocal: true, quiet: true });
     }
   });
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && Date.now() - lastCloudPullTime > 5000) {
-      syncWithCloud({ pushLocal: false, quiet: true });
+      syncWithCloud({ pushLocal: true, quiet: true });
     }
   });
+
+  // 背景定時自動同步：當電腦版或手機版開著時，每 20 秒自動與雲端雙向同步最新異動（無須手動重整）
+  setInterval(() => {
+    if (document.visibilityState === 'visible' && !cloudSyncInFlight && Date.now() - lastCloudPullTime > 18000) {
+      syncWithCloud({ pushLocal: true, quiet: true });
+    }
+  }, 20000);
 
   function applyExternalPayload({ date, sched = '', todo = '', memo = '', weekKey = '', weekMemo = '' }) {
     const targetDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date.trim()))
