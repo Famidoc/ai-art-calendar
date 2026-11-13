@@ -734,7 +734,8 @@ function syncCalendarBatch(payload) {
         Boolean(inRec.customHoliday);
 
       const cloudRec = current.days[dateStr];
-      if (!cloudRec && !hasContent) continue;
+      const isExplicitReplace = replaceDayKeys.has(dateStr);
+      if (!cloudRec && !hasContent && !isExplicitReplace) continue;
 
       const inUpdated = Number(inRec.updatedAt) || 0;
       const cloudUpdated = Number(cloudRec?.updatedAt) || 0;
@@ -742,47 +743,19 @@ function syncCalendarBatch(payload) {
         ...new Set([...(cloudRec?.syncedGcalIds || []), ...(inRec.syncedGcalIds || [])])
       ];
 
-      // 若是前端明確指定編輯覆蓋該日 (replaceDates) 或前端時間戳較新，以最新編輯為準；否則進行智慧聯集合併
-      if (!cloudRec || replaceDayKeys.has(dateStr) || (inUpdated > 0 && inUpdated >= cloudUpdated)) {
+      // 嚴格以最新編輯時間戳 (inUpdated > cloudUpdated) 或明確操作變更 (replaceDates) 為準，絕不把舊裝置已刪除的項目合併復活
+      if (!cloudRec || isExplicitReplace || (inUpdated > 0 && inUpdated > cloudUpdated) || (cloudUpdated === 0 && inUpdated === 0 && hasContent)) {
         const merged = {
           schedules: Array.isArray(inRec.schedules) ? inRec.schedules : [],
           todos: Array.isArray(inRec.todos) ? inRec.todos : [],
           memo: String(inRec.memo ?? ''),
           customHoliday: inRec.customHoliday || null,
           syncedGcalIds: combinedGcalIds,
-          updatedAt: inUpdated || Date.now()
+          updatedAt: isExplicitReplace ? Math.max(inUpdated, cloudUpdated + 1, Date.now()) : (inUpdated || Date.now())
         };
-        if (replaceDayKeys.has(dateStr) || inUpdated > cloudUpdated) {
+        if (isExplicitReplace || inUpdated > cloudUpdated) {
           pushDaySchedulesToGoogleCalendar(dateStr, merged);
         }
-        current.days[dateStr] = saveDayRecordToSheet(daysSheet, dateStr, merged);
-      } else if (hasContent && cloudRec) {
-        // 聯集合併：保留雲端既有項目並補上本機獨有項目
-        const mergedSchedules = [...(cloudRec.schedules || [])];
-        for (const s of (inRec.schedules || [])) {
-          if (!mergedSchedules.some(cs => cs.id === s.id || (cs.time === s.time && cs.text === s.text))) {
-            mergedSchedules.push(s);
-          }
-        }
-        const mergedTodos = [...(cloudRec.todos || [])];
-        for (const t of (inRec.todos || [])) {
-          if (!mergedTodos.some(ct => ct.id === t.id || ct.text === t.text)) {
-            mergedTodos.push(t);
-          }
-        }
-        let mergedMemo = cloudRec.memo || '';
-        const inMemo = String(inRec.memo || '').trim();
-        if (inMemo && !mergedMemo.includes(inMemo)) {
-          mergedMemo = mergedMemo ? (mergedMemo + '\n' + inMemo) : inMemo;
-        }
-        const merged = {
-          schedules: mergedSchedules,
-          todos: mergedTodos,
-          memo: mergedMemo,
-          customHoliday: cloudRec.customHoliday || inRec.customHoliday || null,
-          syncedGcalIds: combinedGcalIds,
-          updatedAt: Math.max(cloudUpdated, inUpdated, Date.now())
-        };
         current.days[dateStr] = saveDayRecordToSheet(daysSheet, dateStr, merged);
       }
     }

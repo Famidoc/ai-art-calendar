@@ -653,17 +653,34 @@ const IDB_NAME = 'ArtCalendarUniversalDB';
 const IDB_STORE = 'appStateStore';
 const IDB_KEY = 'universal_calendar_data';
 const CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbw52alTyL-zPAYH6GKJHb3vED2smOanSX7W2BdiRdRQWJgvv0nrvIe9MLKdyHsJueqD/exec';
+const PENDING_DATES_KEY = 'antigravity_pending_replace_dates_v1';
 let saveTimer = null;
 let cloudSyncInFlight = false;
 let pendingCloudSyncOptions = null;
 let lastCloudPullTime = 0;
-const pendingCloudReplaceDates = new Set();
+const pendingCloudReplaceDates = new Set(
+  (() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PENDING_DATES_KEY) || '[]');
+      return Array.isArray(saved) ? saved : [];
+    } catch (_) {
+      return [];
+    }
+  })()
+);
+
+function persistPendingReplaceDates() {
+  try {
+    localStorage.setItem(PENDING_DATES_KEY, JSON.stringify([...pendingCloudReplaceDates]));
+  } catch (_) {}
+}
 
 function markDayUpdated(dateStr = state.currentDateStr) {
   if (!dateStr) return;
   const rec = ensureDayRecord(dateStr);
   rec.updatedAt = Date.now();
   pendingCloudReplaceDates.add(dateStr);
+  persistPendingReplaceDates();
 }
 
 function openCalendarDB() {
@@ -837,7 +854,7 @@ function mergeLoadedData(incoming) {
           ...new Set([...(curDay.syncedGcalIds || []), ...(inDay.syncedGcalIds || [])])
         ];
 
-        if (inTime > curTime) {
+        if (inTime > curTime && !pendingCloudReplaceDates.has(dateStr)) {
           state.data.days[dateStr] = {
             schedules: Array.isArray(inDay.schedules) ? inDay.schedules : [],
             todos: Array.isArray(inDay.todos) ? inDay.todos : [],
@@ -909,14 +926,21 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
     let cloudPayload = null;
     if (pushLocal) {
       // 準備不含大型 Base64 圖片的輕量 days 結構上傳同步
+      // 若有明確待同步異動日期 (pendingCloudReplaceDates)，僅精準推送異動日期，避免背景未編輯的舊資料干擾雲端
       const lightDays = {};
-      for (const [dKey, dVal] of Object.entries(state.data.days || {})) {
+      const onlyDirty = pendingCloudReplaceDates.size > 0;
+      const targetEntries = onlyDirty
+        ? [...pendingCloudReplaceDates].map(k => [k, state.data.days[k] || { schedules: [], todos: [], memo: '', customHoliday: null, updatedAt: Date.now() }])
+        : Object.entries(state.data.days || {});
+
+      for (const [dKey, dVal] of targetEntries) {
         if (!dVal) continue;
         const hasData =
           (Array.isArray(dVal.schedules) && dVal.schedules.length > 0) ||
           (Array.isArray(dVal.todos) && dVal.todos.length > 0) ||
           Boolean(dVal.memo && String(dVal.memo).trim()) ||
           Boolean(dVal.customHoliday) ||
+          Number(dVal.updatedAt) > 0 ||
           pendingCloudReplaceDates.has(dKey);
         if (!hasData) continue;
         lightDays[dKey] = {
@@ -925,7 +949,7 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
           memo: dVal.memo || '',
           customHoliday: dVal.customHoliday || null,
           syncedGcalIds: dVal.syncedGcalIds || [],
-          updatedAt: Number(dVal.updatedAt) || Date.now()
+          updatedAt: Number(dVal.updatedAt) || 0
         };
       }
 
@@ -945,7 +969,10 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
       if (res.ok) {
         cloudPayload = await res.json();
         if (cloudPayload && cloudPayload.ok) {
-          pendingCloudReplaceDates.clear();
+          for (const d of replaceDates) {
+            pendingCloudReplaceDates.delete(d);
+          }
+          persistPendingReplaceDates();
         }
       }
     } else {
@@ -1034,7 +1061,7 @@ function triggerAutoSave(changedDateStr = null) {
     } else {
       setSaveStatus('✓ 已存於裝置');
     }
-  }, 350);
+  }, 100);
 }
 
 // ============================================================================
@@ -2286,20 +2313,20 @@ async function initApp() {
 
   window.addEventListener('focus', () => {
     if (Date.now() - lastCloudPullTime > 5000) {
-      syncWithCloud({ pushLocal: true, quiet: true });
+      syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0, quiet: true });
     }
   });
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && Date.now() - lastCloudPullTime > 5000) {
-      syncWithCloud({ pushLocal: true, quiet: true });
+      syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0, quiet: true });
     }
   });
 
-  // 背景定時自動同步：當電腦版或手機版開著時，每 20 秒自動與雲端雙向同步最新異動（無須手動重整）
+  // 背景定時自動同步：當電腦版或手機版開著時，每 20 秒自動從雲端拉取最新異動（若有尚未上傳的本機修改則一併推送）
   setInterval(() => {
     if (document.visibilityState === 'visible' && !cloudSyncInFlight && Date.now() - lastCloudPullTime > 18000) {
-      syncWithCloud({ pushLocal: true, quiet: true });
+      syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0, quiet: true });
     }
   }, 20000);
 
@@ -2513,12 +2540,12 @@ async function initApp() {
     } catch (_) {}
   } else if (jumpDate && /^\d{4}-\d{2}-\d{2}$/.test(jumpDate)) {
     openDayView(jumpDate);
-    syncWithCloud({ pushLocal: true, quiet: false });
+    syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0, quiet: false });
   } else {
     // 初始渲染月曆視圖
     switchViewMode('month');
-    // 啟動後自動與 Google 雲端試算表進行雙向同步
-    syncWithCloud({ pushLocal: true, quiet: false });
+    // 啟動後自動與 Google 雲端試算表同步（若有未上傳異動則先推後拉，否則直接拉取雲端最新狀態）
+    syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0, quiet: false });
   }
 }
 
