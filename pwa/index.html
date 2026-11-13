@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="widget-container" class="widget-container view-month">
+  <div id="widget-container" class="widget-container view-day">
     <section id="artwork-section" class="artwork-section">
       <div id="artwork-ZeroBg" class="artwork-blur-bg"></div>
       <img id="artwork-img" class="artwork-img" alt="月份專屬 AI 繪圖" draggable="false" />
@@ -57,9 +57,10 @@
             <button id="btn-next-month" class="icon-btn" title="下個月 (自動跨年)">▶</button>
             <button id="btn-go-today" class="pill-btn today-btn" title="立即跳回今天的年份與日期">📍 今日</button>
             <button id="btn-ai-paste" class="pill-btn ai-paste-btn" title="一鍵貼上從 Gemini Skill 複製的行程、待辦與備忘">✨ AI貼上</button>
+            <button id="btn-toggle-tools" class="icon-btn tools-toggle-btn" title="展開/收合圖片調整與進階設定工具列">⚙️</button>
           </div>
 
-          <div class="control-group">
+          <div class="control-group collapsible-tools">
             <button id="btn-change-art" class="pill-btn" title="更換此年份本月的專屬 AI 繪圖（亦可直接將圖片拖曳至上方畫面）">
               🖼️ 換圖
             </button>
@@ -75,7 +76,7 @@
             </div>
           </div>
 
-          <div class="control-group">
+          <div class="control-group collapsible-tools">
             <button id="btn-toggle-startday" class="pill-btn" title="切換每週第一天為週日或週一">
               📅 週日始
             </button>
@@ -90,7 +91,7 @@
             </button>
           </div>
 
-          <div class="control-group window-controls">
+          <div class="control-group window-controls collapsible-tools">
             <div class="opacity-slider-wrap" title="調整月曆視窗整體透明度">
               <span class="mini-label">透明</span>
               <input id="window-opacity-slider" type="range" min="45" max="100" value="98" />
@@ -126,7 +127,7 @@
     </section>
 
     <main id="calendar-section" class="calendar-section">
-      <div id="month-view" class="view-panel active">
+      <div id="month-view" class="view-panel">
         <div class="month-grid-header" id="month-weekday-header">
           <div class="week-menu-col-header" title="點選下方週次按鈕可進入該週「週曆」">週曆選單</div>
         </div>
@@ -151,7 +152,7 @@
         <div id="week-days-container" class="week-days-container"></div>
       </div>
 
-      <div id="day-view" class="view-panel">
+      <div id="day-view" class="view-panel active">
         <div class="subview-toolbar">
           <div class="subview-nav-left">
             <button id="btn-day-back-month" class="back-btn">← 返回月曆</button>

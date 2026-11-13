@@ -1815,21 +1815,12 @@ async function initApp() {
   setupPWA();
   await loadAllData();
 
-  // 預設進入上次瀏覽的年份/月份；若首次開啟且已有 2027 月曆圖，預設開啟 2027 年 1 月（亦可隨時點「📍 今日」跳回當天）
+  // 預設每次啟動皆定位到當日的年、月、日，並預設顯示當日的「日曆」頁面
   const now = new Date();
-  if (state.data.settings.lastViewedYear && state.data.settings.lastViewedMonth) {
-    state.currentYear = Number(state.data.settings.lastViewedYear) || 2027;
-    state.currentMonth = Number(state.data.settings.lastViewedMonth) || 1;
-  } else {
-    state.currentYear = 2027;
-    state.currentMonth = 1;
-  }
-
-  if (state.currentYear === now.getFullYear() && state.currentMonth === now.getMonth() + 1) {
-    state.currentDateStr = formatDateStr(state.currentYear, state.currentMonth, now.getDate());
-  } else {
-    state.currentDateStr = formatDateStr(state.currentYear, state.currentMonth, 1);
-  }
+  const todayDateStr = formatDateStr(now.getFullYear(), now.getMonth() + 1, now.getDate());
+  state.currentYear = now.getFullYear();
+  state.currentMonth = now.getMonth() + 1;
+  state.currentDateStr = todayDateStr;
 
   // 上個月 / 下個月 (自動跨年)
   document.getElementById('btn-prev-month').addEventListener('click', () => stepMonth(-1));
@@ -2510,6 +2501,16 @@ async function initApp() {
     }
   });
 
+  // 「⚙️」展開/收合進階設定與圖片調整工具列
+  const btnToggleTools = document.getElementById('btn-toggle-tools');
+  const widgetTopbar = document.querySelector('.widget-topbar');
+  if (btnToggleTools && widgetTopbar) {
+    btnToggleTools.addEventListener('click', () => {
+      const expanded = widgetTopbar.classList.toggle('tools-expanded');
+      btnToggleTools.classList.toggle('active', expanded);
+    });
+  }
+
   // 檢查網址是否帶有 ?date=YYYY-MM-DD 與快速寫入參數 (sched / todo / memo / weekMemo)
   const urlParams = new URLSearchParams(window.location.search);
   const jumpDate = urlParams.get('date');
@@ -2521,7 +2522,7 @@ async function initApp() {
 
   const targetWriteDate = (jumpDate && /^\d{4}-\d{2}-\d{2}$/.test(jumpDate))
     ? jumpDate
-    : formatDateStr(now.getFullYear(), now.getMonth() + 1, now.getDate());
+    : todayDateStr;
 
   const hasUrlWrite = Boolean(urlSched || urlTodo || urlMemo || (urlWeekKey && urlWeekMemo));
   if (hasUrlWrite) {
@@ -2542,8 +2543,8 @@ async function initApp() {
     openDayView(jumpDate);
     syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0, quiet: false });
   } else {
-    // 初始渲染月曆視圖
-    switchViewMode('month');
+    // 預設顯示當日的日曆頁面 (Day View)
+    openDayView(todayDateStr);
     // 啟動後自動與 Google 雲端試算表同步（若有未上傳異動則先推後拉，否則直接拉取雲端最新狀態）
     syncWithCloud({ pushLocal: pendingCloudReplaceDates.size > 0, quiet: false });
   }
