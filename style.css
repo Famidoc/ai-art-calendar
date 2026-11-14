@@ -475,6 +475,7 @@ input[type="range"] {
 
 .month-grid-body {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1515,7 +1516,8 @@ input[type="range"] {
   }
   .app-footer {
     font-size: 0.7rem;
-    padding: 4px 10px max(5px, env(safe-area-inset-bottom));
+    color: rgba(203, 213, 225, 0.85);
+    padding: 4px 10px max(6px, env(safe-area-inset-bottom));
   }
 
   /* 週曆與日曆模式下，手機版上方繪圖橫幅適度收斂，留給下方行事曆更大空間 */

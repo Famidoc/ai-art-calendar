@@ -2027,7 +2027,17 @@ let deferredInstallPrompt = null;
 
 function setupPWA() {
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-    navigator.serviceWorker.register('./sw.js').catch((err) => {
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController && !refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
+    });
+    navigator.serviceWorker.register('./sw.js').then((reg) => {
+      reg.update().catch(() => {});
+    }).catch((err) => {
       console.warn('ServiceWorker registration skipped:', err);
     });
   }
