@@ -1,7 +1,7 @@
 // ============================================================================
 // AI 繪圖萬年桌面月曆 — PWA Service Worker (支援離線啟動與靜態資源快取)
 // ============================================================================
-const CACHE_NAME = 'art-calendar-pwa-v15';
+const CACHE_NAME = 'art-calendar-pwa-v16';
 const CORE_ASSETS = [
   './',
   './index.html',
