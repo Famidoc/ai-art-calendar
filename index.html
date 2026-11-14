@@ -92,6 +92,7 @@
             <button id="btn-font-dec" class="icon-btn" title="縮小整體字體 (自動記憶)">A-</button>
             <button id="btn-font-inc" class="icon-btn" title="放大整體字體 (自動記憶)">A+</button>
             <button id="btn-cloud-sync" class="icon-btn" title="立即與 Google 雲端試算表雙向同步（支援 Gemini Skill 跨裝置寫入）">☁️</button>
+            <button id="btn-cloud-config" class="icon-btn" title="設定或切換個人 Google 雲端試算表 (AI-Art-Calendar-DB) 網址">🔗</button>
             <button id="btn-export-data" class="icon-btn" title="匯出完整備份 JSON 檔案（含各年行程與自訂圖片）">💾</button>
             <button id="btn-import-data" class="icon-btn" title="匯入還原 JSON 備份檔案">📂</button>
             <button id="btn-fullscreen" class="icon-btn" title="切換全螢幕無邊框模式（隱藏手機/瀏覽器頂部網址列）">⛶</button>
@@ -297,6 +298,28 @@
           <button type="button" class="search-filter-pill" data-filter="week">🎯 週重點</button>
         </div>
         <div id="search-results-list" class="search-results-list"></div>
+      </div>
+    </div>
+
+    <!-- 個人雲端試算表 (AI-Art-Calendar-DB) 設定視窗 -->
+    <div id="cloud-config-modal" class="search-modal hidden">
+      <div class="search-modal-backdrop" id="cloud-config-backdrop"></div>
+      <div class="search-modal-panel cloud-config-panel">
+        <div class="search-modal-header">
+          <div class="cloud-config-title">☁️ 個人雲端資料庫設定 (AI-Art-Calendar-DB)</div>
+          <button id="btn-close-cloud-config" type="button" class="icon-btn" title="關閉設定 (Esc)">✕</button>
+        </div>
+        <div class="cloud-config-body">
+          <p class="cloud-config-desc">
+            預設為<strong>純本機離線模式</strong>（資料安全保存在您的裝置中）。若需跨裝置同步與 Google 日曆橋接，請貼上您自己部署的 Google Apps Script Web App 網址（結尾為 <code>/exec</code>）：
+          </p>
+          <input id="cloud-sync-url-input" type="url" class="text-input cloud-url-input" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" />
+          <div id="cloud-config-status" class="cloud-config-status"></div>
+          <div class="cloud-config-actions">
+            <button id="btn-save-cloud-url" type="button" class="add-btn">💾 儲存並同步</button>
+            <button id="btn-clear-cloud-url" type="button" class="pill-btn">🔒 切回純本機模式</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

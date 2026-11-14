@@ -21,6 +21,7 @@
 const SHEET_DAYS = '每日記事';
 const SHEET_WEEKS = '本週重點備忘';
 const SHEET_ART = '月份畫作設定';
+const SHEET_SETTINGS = '系統設定';
 const VALID_COLORS = ['sky', 'emerald', 'amber', 'rose', 'violet'];
 const ART_CHUNK_SIZE = 45000;
 const ART_MAX_CHUNKS = 5;
@@ -105,7 +106,50 @@ function ensureSheets() {
     artSheet.setColumnWidth(6, 160);
   }
 
-  return { ss, daysSheet, weeksSheet, artSheet };
+  let settingsSheet = ss.getSheetByName(SHEET_SETTINGS);
+  if (!settingsSheet) {
+    settingsSheet = ss.insertSheet(SHEET_SETTINGS);
+    populateSettingsSheet(settingsSheet);
+  }
+
+  return { ss, daysSheet, weeksSheet, artSheet, settingsSheet };
+}
+
+/**
+ * 初始化「系統設定」分頁內容（供複製範本分享給親友時直接查看與記錄個人 Web App 網址）
+ */
+function populateSettingsSheet(sheet) {
+  sheet.clear();
+  const rows = [
+    ['項目', '設定值 / 操作說明'],
+    ['我的專屬 Web App 網址 (/exec)', '（部署完成後，請將產生的 https://script.google.com/macros/s/.../exec 網址貼到此處備忘）'],
+    ['步驟 1：建立自己的副本', '點選 Google 試算表左上角「檔案」➔「建立副本」，存到您自己的 Google 雲端硬碟。'],
+    ['步驟 2：部署為網頁應用程式', '點選上方「擴充功能」➔「Apps Script」➔ 右上角「部署」➔「新增部署作業」➔ 類型選「網頁應用程式」、執行身分選「我」、誰可以存取選「所有人」。'],
+    ['步驟 3：啟用 Google 日曆橋接（選用）', '在 Apps Script 編輯器上方函式選單選擇 authorizeGoogleCalendar，點「▶ 執行」並完成授權。'],
+    ['步驟 4：連結到 AI 萬用年曆 PWA', '打開年曆網頁，點選頂部「⚙️」➔「🔗」或「☁️」，貼上您的 /exec 網址並儲存即可開始同步！']
+  ];
+  sheet.getRange(1, 1, rows.length, 2).setValues(rows);
+  sheet.setFrozenRows(1);
+  sheet.getRange('A1:B1').setFontWeight('bold').setBackground('#0f172a').setFontColor('#f8fafc');
+  sheet.getRange('A2:B2').setBackground('#fef9c3').setFontWeight('bold');
+  sheet.setColumnWidth(1, 240);
+  sheet.setColumnWidth(2, 680);
+  sheet.getRange('A1:B' + rows.length).setWrap(true);
+}
+
+/**
+ * 🧹 一鍵清空試算表資料（僅保留標題列與「系統設定」導引分頁，方便製作乾淨副本分享給親友）
+ */
+function resetTemplateForSharing() {
+  const { daysSheet, weeksSheet, artSheet, settingsSheet } = ensureSheets();
+  [daysSheet, weeksSheet, artSheet].forEach((sh) => {
+    const lastRow = sh.getLastRow();
+    if (lastRow > 1) {
+      sh.deleteRows(2, lastRow - 1);
+    }
+  });
+  populateSettingsSheet(settingsSheet);
+  Logger.log('✅ 已清空每日記事、本週重點備忘與月份畫作資料，並更新系統設定分頁，可安心分享此副本！');
 }
 
 function makeId() {

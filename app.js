@@ -660,9 +660,55 @@ const LEGACY_STORAGE_KEY = 'antigravity_calendar_2027_v1';
 const IDB_NAME = 'ArtCalendarUniversalDB';
 const IDB_STORE = 'appStateStore';
 const IDB_KEY = 'universal_calendar_data';
-const CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbw52alTyL-zPAYH6GKJHb3vED2smOanSX7W2BdiRdRQWJgvv0nrvIe9MLKdyHsJueqD/exec';
+const CLOUD_SYNC_URL_KEY = 'antigravity_cloud_sync_url_v1';
 const PENDING_DATES_KEY = 'antigravity_pending_replace_dates_v1';
 const PENDING_ART_KEY = 'antigravity_pending_month_art_v1';
+
+function isValidCloudSyncUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(\?.*)?$/i.test(trimmed);
+}
+
+function getCloudSyncUrl() {
+  try {
+    const saved = localStorage.getItem(CLOUD_SYNC_URL_KEY) || '';
+    return isValidCloudSyncUrl(saved) ? saved.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+function setCloudSyncUrl(url) {
+  const trimmed = (url || '').trim();
+  try {
+    if (!trimmed) {
+      localStorage.removeItem(CLOUD_SYNC_URL_KEY);
+      return '';
+    }
+    localStorage.setItem(CLOUD_SYNC_URL_KEY, trimmed);
+    return trimmed;
+  } catch {
+    return '';
+  }
+}
+
+function applyCloudSyncUrlFromQuery() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const paramUrl = params.get('syncUrl') || params.get('cloudUrl');
+    if (paramUrl && isValidCloudSyncUrl(paramUrl)) {
+      setCloudSyncUrl(paramUrl);
+      params.delete('syncUrl');
+      params.delete('cloudUrl');
+      const remaining = params.toString();
+      const cleanUrl = window.location.pathname + (remaining ? `?${remaining}` : '') + window.location.hash;
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+  } catch {
+    // 忽略網址參數解析失敗
+  }
+}
 let saveTimer = null;
 let cloudSyncInFlight = false;
 let pendingCloudSyncOptions = null;
@@ -983,7 +1029,8 @@ async function persistLocalStateOnly() {
  * 與 Google Apps Script 雲端試算表雙向同步 (支援手機 Gemini Skill 寫入與跨裝置同步)
  */
 async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
-  if (!CLOUD_SYNC_URL) return false;
+  const cloudSyncUrl = getCloudSyncUrl();
+  if (!cloudSyncUrl) return false;
   if (cloudSyncInFlight) {
     pendingCloudSyncOptions = {
       pushLocal: Boolean(pendingCloudSyncOptions?.pushLocal || pushLocal),
@@ -1068,7 +1115,7 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
         };
       }
 
-      const res = await fetch(CLOUD_SYNC_URL, {
+      const res = await fetch(cloudSyncUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -1094,7 +1141,7 @@ async function syncWithCloud({ pushLocal = true, quiet = false } = {}) {
         }
       }
     } else {
-      const res = await fetch(`${CLOUD_SYNC_URL}?action=sync&forceGcal=${!quiet ? '1' : '0'}&t=${Date.now()}`);
+      const res = await fetch(`${cloudSyncUrl}?action=sync&forceGcal=${!quiet ? '1' : '0'}&t=${Date.now()}`);
       if (res.ok) {
         cloudPayload = await res.json();
       }
@@ -2075,6 +2122,7 @@ function setupPWA() {
 // 事件綁定與初始化
 // ============================================================================
 async function initApp() {
+  applyCloudSyncUrlFromQuery();
   setupPWA();
   await loadAllData();
 
@@ -2603,9 +2651,70 @@ async function initApp() {
     });
   }
 
-  // 雲端同步按鈕與自動焦點同步
+  // 雲端同步按鈕、個人雲端設定彈窗與自動焦點同步
+  const cloudConfigModal = document.getElementById('cloud-config-modal');
+  const cloudUrlInput = document.getElementById('cloud-sync-url-input');
+  const cloudConfigStatus = document.getElementById('cloud-config-status');
+
+  function openCloudConfigModal() {
+    if (!cloudConfigModal) return;
+    const currentUrl = getCloudSyncUrl();
+    if (cloudUrlInput) cloudUrlInput.value = currentUrl;
+    if (cloudConfigStatus) {
+      cloudConfigStatus.textContent = currentUrl
+        ? '目前狀態：已綁定個人雲端資料庫'
+        : '目前狀態：純本機離線模式（未連結雲端）';
+      cloudConfigStatus.style.color = currentUrl ? 'var(--accent-emerald)' : 'var(--text-secondary)';
+    }
+    cloudConfigModal.classList.remove('hidden');
+    cloudUrlInput?.focus();
+  }
+
+  function closeCloudConfigModal() {
+    cloudConfigModal?.classList.add('hidden');
+  }
+
   document.getElementById('btn-cloud-sync')?.addEventListener('click', () => {
+    if (!getCloudSyncUrl()) {
+      openCloudConfigModal();
+      return;
+    }
     syncWithCloud({ pushLocal: true, quiet: false });
+  });
+
+  document.getElementById('btn-cloud-config')?.addEventListener('click', openCloudConfigModal);
+  document.getElementById('btn-close-cloud-config')?.addEventListener('click', closeCloudConfigModal);
+  document.getElementById('cloud-config-backdrop')?.addEventListener('click', closeCloudConfigModal);
+
+  document.getElementById('btn-save-cloud-url')?.addEventListener('click', async () => {
+    const raw = (cloudUrlInput?.value || '').trim();
+    if (!raw) {
+      setCloudSyncUrl('');
+      closeCloudConfigModal();
+      setSaveStatus('🔒 已切換為純本機模式');
+      return;
+    }
+    if (!isValidCloudSyncUrl(raw)) {
+      if (cloudConfigStatus) {
+        cloudConfigStatus.textContent = '⚠️ 網址格式不正確，請確認為 https://script.google.com/macros/s/.../exec';
+        cloudConfigStatus.style.color = 'var(--accent-rose)';
+      }
+      return;
+    }
+    setCloudSyncUrl(raw);
+    closeCloudConfigModal();
+    setSaveStatus('☁️ 已綁定個人雲端，正在同步...');
+    await syncWithCloud({ pushLocal: true, quiet: false });
+  });
+
+  document.getElementById('btn-clear-cloud-url')?.addEventListener('click', () => {
+    setCloudSyncUrl('');
+    if (cloudUrlInput) cloudUrlInput.value = '';
+    if (cloudConfigStatus) {
+      cloudConfigStatus.textContent = '🔒 已清除雲端連結，切回純本機離線模式';
+      cloudConfigStatus.style.color = 'var(--text-secondary)';
+    }
+    setSaveStatus('🔒 已切換為純本機模式');
   });
 
   // 全螢幕無網址列切換按鈕 (支援手機與電腦瀏覽器)

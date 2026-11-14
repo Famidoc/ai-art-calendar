@@ -2011,6 +2011,52 @@ input[type="range"] {
   font-size: 0.85rem;
 }
 
+/* ==================== 個人雲端設定彈窗 ==================== */
+.cloud-config-panel {
+  max-width: 560px;
+}
+.cloud-config-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.cloud-config-body {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cloud-config-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.cloud-config-desc code {
+  background: rgba(56, 189, 248, 0.14);
+  color: var(--accent-sky);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.76rem;
+}
+.cloud-url-input {
+  width: 100%;
+  font-size: 0.8rem;
+  padding: 8px 10px;
+  user-select: text;
+}
+.cloud-config-status {
+  font-size: 0.76rem;
+  color: var(--accent-emerald);
+  min-height: 1.1em;
+}
+.cloud-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
 /* ==================== 底部版權頁尾 (Footer) ==================== */
 .app-footer {
   flex-shrink: 0;
