@@ -45,8 +45,9 @@ html, body {
 
 /* ==================== 桌面小工具主容器 ==================== */
 .widget-container {
-  width: 100vw;
+  width: 100%;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-widget);
@@ -1511,6 +1512,10 @@ input[type="range"] {
   .widget-container {
     border-radius: 0;
     border: none;
+  }
+  .app-footer {
+    font-size: 0.7rem;
+    padding: 4px 10px max(5px, env(safe-area-inset-bottom));
   }
 
   /* 週曆與日曆模式下，手機版上方繪圖橫幅適度收斂，留給下方行事曆更大空間 */
