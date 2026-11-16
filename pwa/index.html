@@ -176,7 +176,10 @@
           <div class="day-card schedule-card">
             <div class="day-card-header">
               <h3>🕒 行事安排 <span id="schedule-count" class="count-badge">0</span></h3>
-              <span class="card-hint">同步顯示於月曆與週曆 · 點擊行程可編輯</span>
+              <div class="schedule-header-actions">
+                <span class="card-hint">同步顯示於月曆與週曆 · 點擊行程可編輯</span>
+                <button id="btn-toggle-add-schedule" type="button" class="pill-btn mobile-add-toggle-btn" title="展開或收合新增行程面板">＋ 新增行事</button>
+              </div>
             </div>
             <form id="form-add-schedule" class="add-item-form">
               <div class="time-range-group" title="設定開始時間與結束時間（結束時間可留空）">

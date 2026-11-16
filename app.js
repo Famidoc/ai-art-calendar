@@ -602,9 +602,21 @@ function setColorPickerSelection(colorName) {
   });
 }
 
+function setMobileScheduleFormExpanded(expanded) {
+  const formEl = document.getElementById('form-add-schedule');
+  const toggleBtn = document.getElementById('btn-toggle-add-schedule');
+  if (!formEl) return;
+  formEl.classList.toggle('mobile-expanded', Boolean(expanded));
+  if (toggleBtn) {
+    toggleBtn.classList.toggle('active', Boolean(expanded));
+    toggleBtn.textContent = expanded ? '▲ 收合面板' : '＋ 新增行事';
+  }
+}
+
 function startEditSchedule(item) {
   if (!item) return;
   state.editingScheduleId = item.id;
+  setMobileScheduleFormExpanded(true);
   const startInput = document.getElementById('sched-time-input');
   const endInput = document.getElementById('sched-end-time-input');
   const textInput = document.getElementById('sched-text-input');
@@ -631,6 +643,7 @@ function startEditSchedule(item) {
 
 function cancelEditSchedule(skipRender = false) {
   state.editingScheduleId = null;
+  setMobileScheduleFormExpanded(false);
   const startInput = document.getElementById('sched-time-input');
   const endInput = document.getElementById('sched-end-time-input');
   const textInput = document.getElementById('sched-text-input');
@@ -2439,10 +2452,26 @@ async function initApp() {
     textInput.value = '';
     if (endTimeInput) endTimeInput.value = '';
     if (repeatSelect) repeatSelect.value = 'none';
+    setMobileScheduleFormExpanded(false);
     triggerAutoSave(state.currentDateStr);
     renderDayView();
     if (targetDates.length > 1) {
       setSaveStatus(`🔁 已建立週期例行行程（共 ${targetDates.length} 筆）`);
+    }
+  });
+
+  document.getElementById('btn-toggle-add-schedule')?.addEventListener('click', () => {
+    const formEl = document.getElementById('form-add-schedule');
+    const isExpanded = formEl?.classList.contains('mobile-expanded');
+    if (isExpanded) {
+      if (state.editingScheduleId) {
+        cancelEditSchedule();
+      } else {
+        setMobileScheduleFormExpanded(false);
+      }
+    } else {
+      setMobileScheduleFormExpanded(true);
+      document.getElementById('sched-text-input')?.focus();
     }
   });
 

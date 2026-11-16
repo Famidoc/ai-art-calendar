@@ -1027,6 +1027,16 @@ input[type="range"] {
   color: #64748b;
 }
 
+.schedule-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mobile-add-toggle-btn {
+  display: none;
+}
+
 /* 新增行程與待辦表單 */
 .add-item-form {
   display: flex;
@@ -1811,18 +1821,18 @@ input[type="range"] {
   .back-btn,
   #btn-day-to-week,
   .holiday-override-btn {
-    padding: 2px 6px;
-    font-size: 0.68rem;
+    padding: 2px 5px;
+    font-size: 0.65rem;
   }
   .day-holiday-badges {
-    gap: 4px;
+    gap: 3px;
     flex-wrap: wrap;
   }
   .lunar-badge,
   .holiday-badge,
   .solar-badge {
-    font-size: 0.66rem;
-    padding: 2px 6px;
+    font-size: 0.63rem;
+    padding: 2px 5px;
   }
 
   /* 週曆「本週重點備忘」滿版顯示不裁切 */
@@ -1868,17 +1878,63 @@ input[type="range"] {
     min-width: 0;
     scroll-snap-align: center;
   }
+
+  /* 日曆卡片與行事安排：手機版改為彈性直向延展，不截斷已排行程，且「新增行事」面板預設收攏 */
   .day-detail-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
     overflow-y: auto;
     padding: 8px 10px;
-    gap: 8px;
+    gap: 10px;
   }
   .day-card {
-    min-height: 175px;
-    padding: 9px 10px;
-    gap: 7px;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    padding: 10px 12px;
+    gap: 8px;
     flex-shrink: 0;
+  }
+  .day-card .item-list {
+    overflow: visible;
+    max-height: none;
+    flex: none;
+  }
+  .day-card.memo-card {
+    min-height: 180px;
+  }
+  .schedule-card .card-hint {
+    display: none;
+  }
+  .mobile-add-toggle-btn {
+    display: inline-flex;
+    background: #0284c7;
+    color: #ffffff;
+    border: 1px solid #0284c7;
+    border-radius: 7px;
+    padding: 3px 10px;
+    font-size: 0.74rem;
+    font-weight: 700;
+  }
+  .mobile-add-toggle-btn:hover {
+    background: #0369a1;
+    border-color: #0369a1;
+    color: #ffffff;
+  }
+  .mobile-add-toggle-btn.active {
+    background: #f1f5f9;
+    color: #334155;
+    border-color: #cbd5e1;
+  }
+  #form-add-schedule {
+    display: none;
+  }
+  #form-add-schedule.mobile-expanded {
+    display: flex;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px;
   }
 }
 
