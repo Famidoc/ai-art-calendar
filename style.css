@@ -1533,73 +1533,115 @@ input[type="range"] {
     border: none;
   }
   .app-footer {
-    font-size: 0.7rem;
+    font-size: 0.66rem;
     color: rgba(203, 213, 225, 0.85);
-    padding: 4px 10px max(6px, env(safe-area-inset-bottom));
+    padding: 3px 10px max(4px, env(safe-area-inset-bottom));
   }
 
-  /* 週曆與日曆模式下，手機版上方繪圖橫幅適度收斂，留給下方行事曆更大空間 */
+  /* 週曆與日曆模式下，提高手機版上方 AI 繪圖區佔比，並採三段式上下分層避免遮擋畫作 */
   .widget-container.view-week .artwork-section,
   .widget-container.view-day .artwork-section {
-    height: 19%;
+    height: 36%;
   }
   .widget-container.view-week .calendar-section,
   .widget-container.view-day .calendar-section {
-    height: 81%;
+    height: 64%;
   }
 
-  /* 1. 頂部主工具列精簡化：預設僅顯示單排核心導覽，進階設定收納至 ⚙️ 按鈕 */
+  .artwork-section {
+    display: flex;
+    flex-direction: column;
+  }
+  .artwork-gradient-overlay {
+    display: none;
+  }
+  .artwork-img {
+    order: 2;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 1. 頂部主工具列精簡化：獨立置頂不遮蓋畫布，修正手機寬度確保右側 🔍 與 ⚙️ 完整顯示 */
   .widget-topbar {
+    order: 1;
+    position: relative;
+    flex-shrink: 0;
+    width: 100%;
     height: auto;
-    min-height: 40px;
-    padding: 4px 8px;
+    min-height: 0;
+    padding: 3px 6px;
     flex-wrap: wrap;
-    gap: 4px;
-    opacity: 0.98;
-    background: linear-gradient(180deg, rgba(2, 6, 23, 0.88) 0%, rgba(2, 6, 23, 0.45) 85%, transparent 100%);
+    gap: 2px;
+    opacity: 1;
+    background: rgba(9, 13, 22, 0.9);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
   .drag-handle {
     width: 100%;
     justify-content: space-between;
     gap: 6px;
     padding: 0 2px;
+    line-height: 1.15;
   }
   .app-badge {
-    font-size: 0.64rem;
-    padding: 1px 6px;
-    letter-spacing: 0.8px;
+    font-size: 0.58rem;
+    padding: 1px 5px;
+    letter-spacing: 0.6px;
   }
   .save-status {
-    font-size: 0.68rem;
+    font-size: 0.62rem;
   }
   .topbar-controls {
     width: 100%;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 4px;
+    gap: 3px;
   }
   .month-QuickNav {
     width: 100%;
     justify-content: space-between;
-    padding: 3px 6px;
-    gap: 3px;
-    background: rgba(15, 23, 42, 0.82);
+    padding: 2px 4px;
+    gap: 2px;
+    background: rgba(15, 23, 42, 0.85);
+    overflow: hidden;
+  }
+  .month-QuickNav .icon-btn {
+    padding: 2px 4px;
+    min-width: 22px;
+    width: auto;
+    height: 24px;
+    font-size: 0.72rem;
+    justify-content: center;
+    flex-shrink: 0;
   }
   .year-select,
   .month-select {
-    font-size: 0.82rem;
-    padding: 2px 3px;
+    font-size: 0.76rem;
+    padding: 1px 0;
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .ym-divider {
+    font-size: 0.7rem;
+    margin: 0 -1px;
   }
   .today-btn,
   .ai-paste-btn {
-    padding: 3px 7px;
-    font-size: 0.74rem;
+    padding: 2px 5px;
+    font-size: 0.68rem;
+    gap: 2px;
+    flex-shrink: 0;
   }
-  .tools-toggle-btn {
+  .month-QuickNav .search-trigger-btn,
+  .month-QuickNav .tools-toggle-btn {
     display: inline-flex;
-    width: 26px;
-    height: 26px;
-    font-size: 0.82rem;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    font-size: 0.74rem;
+    justify-content: center;
   }
 
   /* 進階設定群組預設隱藏，點擊 ⚙️ 後展開 */
@@ -1611,37 +1653,68 @@ input[type="range"] {
     width: 100%;
     justify-content: center;
     flex-wrap: wrap;
-    padding: 4px 8px;
-    background: rgba(15, 23, 42, 0.92);
+    padding: 4px 6px;
+    background: rgba(15, 23, 42, 0.95);
     border-color: rgba(56, 189, 248, 0.3);
   }
 
-  /* 週曆/日曆模式下，緊湊化繪圖區左下角月份浮水印與題詞，避免與頂部導覽列重疊 */
+  /* 繪圖區底部月份浮水印與題詞：置於畫布下方獨立資訊列，不裁切畫作且完整顯示題詞 */
+  .artwork-caption-box,
   .widget-container.view-week .artwork-caption-box,
   .widget-container.view-day .artwork-caption-box {
-    bottom: 5px;
-    left: 10px;
-    right: 10px;
-    gap: 6px;
+    order: 3;
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    flex-shrink: 0;
+    width: 100%;
+    padding: 3px 10px;
+    gap: 8px;
+    align-items: center;
+    background: rgba(9, 13, 22, 0.86);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
+  .month-hero-badge {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .hero-month-num,
   .widget-container.view-week .hero-month-num,
   .widget-container.view-day .hero-month-num {
-    font-size: 1.35rem;
+    font-size: 1.3rem;
   }
+  .hero-month-meta {
+    gap: 0;
+  }
+  .hero-month-en,
   .widget-container.view-week .hero-month-en,
   .widget-container.view-day .hero-month-en {
-    font-size: 0.68rem;
-    letter-spacing: 1px;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    line-height: 1.15;
   }
+  .hero-month-lunar,
   .widget-container.view-week .hero-month-lunar,
   .widget-container.view-day .hero-month-lunar {
-    font-size: 0.64rem;
+    font-size: 0.6rem;
+    line-height: 1.15;
   }
+  .artwork-title-row {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .artwork-caption-input,
   .widget-container.view-week .artwork-caption-input,
   .widget-container.view-day .artwork-caption-input {
-    width: 130px;
+    width: 100%;
+    max-width: 240px;
     font-size: 0.72rem;
-    padding: 2px 7px;
+    padding: 2px 8px;
+    text-align: center;
   }
 
   /* 2. 月曆視圖：縮減左方「週曆選單」欄寬，釋放空間給右方「週六」欄避免被裁切 */
@@ -1704,12 +1777,12 @@ input[type="range"] {
     padding: 1px 3px;
   }
 
-  /* 3. 週曆與日曆次級工具列 (.subview-toolbar) 結構化分排，消除斷行與右側裁切 */
+  /* 3. 週曆與日曆次級工具列 (.subview-toolbar) 緊湊化分排，消除斷行與浪費空間 */
   .subview-toolbar {
     flex-direction: column;
     align-items: stretch;
-    gap: 5px;
-    padding: 6px 8px;
+    gap: 4px;
+    padding: 5px 8px;
   }
   .subview-nav-left {
     width: 100%;
@@ -1724,44 +1797,45 @@ input[type="range"] {
     width: 100%;
     justify-content: space-between;
     background: rgba(15, 23, 42, 0.6);
-    padding: 3px 6px;
+    padding: 2px 6px;
     border-radius: 8px;
     border: 1px solid rgba(148, 163, 184, 0.16);
   }
   .subview-title {
-    font-size: 0.88rem;
+    font-size: 0.84rem;
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .back-btn {
-    padding: 3px 8px;
-    font-size: 0.74rem;
-  }
+  .back-btn,
   #btn-day-to-week,
   .holiday-override-btn {
-    padding: 3px 7px;
-    font-size: 0.72rem;
+    padding: 2px 6px;
+    font-size: 0.68rem;
   }
-  .day-lunar-pill,
-  .day-holiday-pill,
-  .day-workday-pill {
-    font-size: 0.7rem;
-    padding: 2px 7px;
+  .day-holiday-badges {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .lunar-badge,
+  .holiday-badge,
+  .solar-badge {
+    font-size: 0.66rem;
+    padding: 2px 6px;
   }
 
   /* 週曆「本週重點備忘」滿版顯示不裁切 */
   .week-goal-box {
     width: 100%;
     max-width: none;
-    padding: 3px 8px;
+    padding: 2px 8px;
   }
   .week-goal-label {
-    font-size: 0.72rem;
+    font-size: 0.7rem;
   }
   .week-memo-input {
-    font-size: 0.76rem;
+    font-size: 0.74rem;
   }
 
   /* 日曆「該週 7 天快速切換列」7 等分滿版並排，完整呈現週日~週六 */
@@ -1772,8 +1846,8 @@ input[type="range"] {
     gap: 3px;
   }
   .quick-day-pill {
-    padding: 3px 1px;
-    font-size: 0.66rem;
+    padding: 2px 1px;
+    font-size: 0.64rem;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
@@ -1784,7 +1858,7 @@ input[type="range"] {
     overflow-x: auto;
     overflow-y: hidden;
     gap: 10px;
-    padding: 8px 10px;
+    padding: 6px 10px;
     scroll-snap-type: x mandatory;
   }
   .week-day-col {
@@ -1797,9 +1871,13 @@ input[type="range"] {
   .day-detail-grid {
     grid-template-columns: 1fr;
     overflow-y: auto;
+    padding: 8px 10px;
+    gap: 8px;
   }
   .day-card {
-    min-height: 210px;
+    min-height: 175px;
+    padding: 9px 10px;
+    gap: 7px;
     flex-shrink: 0;
   }
 }
