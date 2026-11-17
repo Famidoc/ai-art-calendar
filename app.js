@@ -1449,7 +1449,7 @@ function renderMonthView() {
         tagHtml = `<span class="day-tag lunar-tag">${escapeHtml(meta.lunarShort)}</span>`;
       }
 
-      // 下方行程膠囊預覽
+      // 下方行程膠囊預覽（支援拉大月曆高度時自動展開顯示第 2、3 筆行程與全寬排版）
       let previewHtml = '';
       const schedules = dayRec?.schedules || [];
       const todos = dayRec?.todos || [];
@@ -1457,15 +1457,24 @@ function renderMonthView() {
       const hasMemo = Boolean((dayRec?.memo && dayRec.memo.trim().length > 0) || memoImgsCount > 0);
 
       if (schedules.length > 0) {
-        const first = schedules[0];
-        const tLabel = formatScheduleTimeLabel(first);
-        const label = tLabel ? `${tLabel} ${first.text}` : first.text;
-        previewHtml += `<span class="mini-event-pill pill-${first.color || 'sky'}">${escapeHtml(label)}</span>`;
+        const pillItems = schedules.slice(0, 3).map((item, idx) => {
+          const tLabel = formatScheduleTimeLabel(item);
+          const label = tLabel ? `${tLabel} ${item.text}` : item.text;
+          const extraCls = idx === 0 ? '' : ` extra-event-pill pill-idx-${idx + 1}`;
+          return `<span class="mini-event-pill pill-${item.color || 'sky'}${extraCls}">${escapeHtml(label)}</span>`;
+        });
+        previewHtml = `<div class="day-events-list">${pillItems.join('')}</div>`;
       }
 
       const indicators = [];
       if (schedules.length > 1) {
-        indicators.push(`<span class="ind-dot" title="共 ${schedules.length} 筆行程">+${schedules.length - 1}</span>`);
+        indicators.push(`<span class="ind-dot ind-more-compact" title="共 ${schedules.length} 筆行程">+${schedules.length - 1}</span>`);
+      }
+      if (schedules.length > 2) {
+        indicators.push(`<span class="ind-dot ind-more-expanded" title="共 ${schedules.length} 筆行程">+${schedules.length - 2}</span>`);
+      }
+      if (schedules.length > 3) {
+        indicators.push(`<span class="ind-dot ind-more-tall" title="共 ${schedules.length} 筆行程">+${schedules.length - 3}</span>`);
       }
       if (todos.length > 0) {
         const doneCount = todos.filter(t => t.done).length;
@@ -2650,6 +2659,227 @@ async function initApp() {
     setSaveStatus(`✓ 字體比例 ${Math.round(next * 100)}%`);
     triggerAutoSave();
   });
+
+  // ============================================================================
+  // ↕ 圖片與下方日期格上下拖拉分隔線控制 (支援滑鼠拖拉、手機觸控拖拉、自動記憶與雙擊還原)
+  // ============================================================================
+  const SPLIT_MONTH_KEY = 'art_calendar_month_art_pct';
+  const SPLIT_SUBVIEW_KEY = 'art_calendar_subview_art_pct';
+
+  const savedMonthArtPct = Number(localStorage.getItem(SPLIT_MONTH_KEY));
+  if (Number.isFinite(savedMonthArtPct) && savedMonthArtPct >= 18 && savedMonthArtPct <= 78) {
+    state.data.settings.monthArtHeightPct = savedMonthArtPct;
+  }
+  const savedSubviewArtPct = Number(localStorage.getItem(SPLIT_SUBVIEW_KEY));
+  if (Number.isFinite(savedSubviewArtPct) && savedSubviewArtPct >= 16 && savedSubviewArtPct <= 68) {
+    state.data.settings.subviewArtHeightPct = savedSubviewArtPct;
+  }
+
+  function applySplitRatioStyles() {
+    const containerEl = document.getElementById('widget-container');
+    if (!containerEl) return;
+
+    const mPct = Number(state.data.settings?.monthArtHeightPct);
+    const hasCustomMonth = Number.isFinite(mPct) && mPct >= 18 && mPct <= 78;
+    const effectiveMonthPct = hasCustomMonth ? mPct : 66.6667;
+
+    if (hasCustomMonth) {
+      containerEl.style.setProperty('--month-art-height', `${mPct}%`);
+    } else {
+      containerEl.style.removeProperty('--month-art-height');
+    }
+
+    // 當月曆區高度佔比擴大（畫布 <= 56% / <= 42%）時，自動啟用日期格全寬多行清晰佈局
+    containerEl.classList.toggle('month-grid-expanded', effectiveMonthPct <= 56);
+    containerEl.classList.toggle('month-grid-tall', effectiveMonthPct <= 42);
+
+    const sPct = Number(state.data.settings?.subviewArtHeightPct);
+    const hasCustomSub = Number.isFinite(sPct) && sPct >= 16 && sPct <= 68;
+    if (hasCustomSub) {
+      containerEl.style.setProperty('--subview-art-height', `${sPct}%`);
+    } else {
+      containerEl.style.removeProperty('--subview-art-height');
+    }
+  }
+
+  applySplitRatioStyles();
+
+  let splitResizerEl = document.getElementById('split-resizer');
+  if (!splitResizerEl) {
+    const calSecEl = document.getElementById('calendar-section');
+    if (calSecEl?.parentNode) {
+      splitResizerEl = document.createElement('div');
+      splitResizerEl.id = 'split-resizer';
+      splitResizerEl.className = 'split-resizer no-drag';
+      splitResizerEl.setAttribute('role', 'separator');
+      splitResizerEl.setAttribute('aria-orientation', 'horizontal');
+      splitResizerEl.title = '上下拖拉可調整圖片與下方日曆顯示佔比（雙擊還原預設比例）';
+      splitResizerEl.innerHTML = `<div class="split-resizer-grip"><span class="split-resizer-pill"></span></div>`;
+      calSecEl.parentNode.insertBefore(splitResizerEl, calSecEl);
+    }
+  }
+
+  function resetCurrentSplitRatio() {
+    if (state.currentView === 'month') {
+      delete state.data.settings.monthArtHeightPct;
+      try { localStorage.removeItem(SPLIT_MONTH_KEY); } catch (_) {}
+    } else {
+      delete state.data.settings.subviewArtHeightPct;
+      try { localStorage.removeItem(SPLIT_SUBVIEW_KEY); } catch (_) {}
+    }
+    applySplitRatioStyles();
+    triggerAutoSave();
+    setSaveStatus('✓ 已還原預設圖片與日曆顯示佔比');
+  }
+
+  if (splitResizerEl) {
+    const containerEl = document.getElementById('widget-container');
+    const artSecEl = document.getElementById('artwork-section');
+    const monthHeaderEl = document.getElementById('month-weekday-header');
+
+    let isDraggingSplit = false;
+    let dragPendingThreshold = false;
+    let dragStartY = 0;
+    let dragStartArtHeightPx = 0;
+    let containerHeightPx = 0;
+    let hasMovedSplit = false;
+    let lastTapTime = 0;
+
+    const beginSplitDrag = (clientY, requireThreshold = false) => {
+      if (!containerEl || !artSecEl) return;
+      const cRect = containerEl.getBoundingClientRect();
+      const aRect = artSecEl.getBoundingClientRect();
+      if (cRect.height <= 0) return;
+      dragStartY = clientY;
+      dragStartArtHeightPx = aRect.height;
+      containerHeightPx = cRect.height;
+      hasMovedSplit = false;
+      dragPendingThreshold = requireThreshold;
+      isDraggingSplit = !requireThreshold;
+      if (isDraggingSplit) {
+        containerEl.classList.add('is-resizing-split');
+      }
+    };
+
+    const updateSplitDrag = (clientY) => {
+      if (!isDraggingSplit && !dragPendingThreshold) return false;
+      const dy = clientY - dragStartY;
+      if (dragPendingThreshold) {
+        if (Math.abs(dy) < 5) return false;
+        dragPendingThreshold = false;
+        isDraggingSplit = true;
+        containerEl?.classList.add('is-resizing-split');
+      }
+      hasMovedSplit = true;
+      const nextArtPx = dragStartArtHeightPx + dy;
+      const rawPct = (nextArtPx / containerHeightPx) * 100;
+
+      if (state.currentView === 'month') {
+        const clamped = Math.max(18, Math.min(78, Math.round(rawPct * 10) / 10));
+        state.data.settings.monthArtHeightPct = clamped;
+        applySplitRatioStyles();
+        const artRound = Math.round(clamped);
+        setSaveStatus(`↕ 圖片 ${artRound}% · 月曆格 ${100 - artRound}%`);
+      } else {
+        const clamped = Math.max(16, Math.min(68, Math.round(rawPct * 10) / 10));
+        state.data.settings.subviewArtHeightPct = clamped;
+        applySplitRatioStyles();
+        const artRound = Math.round(clamped);
+        setSaveStatus(`↕ 圖片 ${artRound}% · 日曆區 ${100 - artRound}%`);
+      }
+      return true;
+    };
+
+    const endSplitDrag = () => {
+      const wasActive = isDraggingSplit;
+      isDraggingSplit = false;
+      dragPendingThreshold = false;
+      containerEl?.classList.remove('is-resizing-split');
+      if (wasActive && hasMovedSplit) {
+        try {
+          if (state.currentView === 'month' && state.data.settings.monthArtHeightPct != null) {
+            localStorage.setItem(SPLIT_MONTH_KEY, String(state.data.settings.monthArtHeightPct));
+          } else if (state.currentView !== 'month' && state.data.settings.subviewArtHeightPct != null) {
+            localStorage.setItem(SPLIT_SUBVIEW_KEY, String(state.data.settings.subviewArtHeightPct));
+          }
+        } catch (_) {}
+        triggerAutoSave();
+      }
+    };
+
+    // 滑鼠拖拉事件 (電腦版)
+    splitResizerEl.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      beginSplitDrag(e.clientY, false);
+    });
+
+    if (monthHeaderEl) {
+      monthHeaderEl.style.cursor = 'ns-resize';
+      monthHeaderEl.addEventListener('mousedown', (e) => {
+        if (e.button !== 0 || state.currentView !== 'month') return;
+        beginSplitDrag(e.clientY, true);
+      });
+    }
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDraggingSplit && !dragPendingThreshold) return;
+      updateSplitDrag(e.clientY);
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDraggingSplit || dragPendingThreshold) {
+        endSplitDrag();
+      }
+    });
+
+    // 雙擊還原預設比例 (電腦版)
+    splitResizerEl.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      resetCurrentSplitRatio();
+    });
+
+    // 觸控拖拉與雙擊還原事件 (手機與平板版)
+    splitResizerEl.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      e.preventDefault();
+      const nowTap = Date.now();
+      if (nowTap - lastTapTime < 320) {
+        lastTapTime = 0;
+        resetCurrentSplitRatio();
+        return;
+      }
+      lastTapTime = nowTap;
+      beginSplitDrag(e.touches[0].clientY, false);
+    }, { passive: false });
+
+    if (monthHeaderEl) {
+      monthHeaderEl.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1 || state.currentView !== 'month') return;
+        beginSplitDrag(e.touches[0].clientY, true);
+      }, { passive: true });
+    }
+
+    window.addEventListener('touchmove', (e) => {
+      if (!isDraggingSplit && !dragPendingThreshold) return;
+      if (!e.touches || e.touches.length !== 1) return;
+      if (updateSplitDrag(e.touches[0].clientY) && e.cancelable) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    window.addEventListener('touchend', () => {
+      if (isDraggingSplit || dragPendingThreshold) {
+        endSplitDrag();
+      }
+    });
+
+    window.addEventListener('touchcancel', () => {
+      if (isDraggingSplit || dragPendingThreshold) {
+        endSplitDrag();
+      }
+    });
+  }
 
   // Electron 桌面視窗控制整合 (透明度、置頂、最小化、關閉)
   const opacitySlider = document.getElementById('window-opacity-slider');

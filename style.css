@@ -58,21 +58,100 @@ html, body {
   position: relative;
 }
 
-/* 嚴格控制：月曆模式上 2/3 AI 繪圖、下 1/3 日期格；週曆與日曆模式平滑延展 */
+/* 月曆模式預設上 2/3 AI 繪圖、下 1/3 日期格；支援使用者上下拖拉分隔線自由改變佔比並自動記憶 */
 .widget-container.view-month .artwork-section {
-  height: 66.6667%;
+  height: var(--month-art-height, 66.6667%);
+  flex-shrink: 0;
 }
 .widget-container.view-month .calendar-section {
-  height: 33.3333%;
+  flex: 1;
+  height: auto;
+  min-height: 0;
 }
 
 .widget-container.view-week .artwork-section,
 .widget-container.view-day .artwork-section {
-  height: 27%;
+  height: var(--subview-art-height, 27%);
+  flex-shrink: 0;
 }
 .widget-container.view-week .calendar-section,
 .widget-container.view-day .calendar-section {
-  height: 73%;
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.widget-container.is-resizing-split .artwork-section,
+.widget-container.is-resizing-split .calendar-section {
+  transition: none !important;
+}
+
+.widget-container.is-resizing-split {
+  cursor: ns-resize;
+  user-select: none;
+}
+
+/* ==================== 上下拖拉分隔線 (Split Resizer) ==================== */
+.split-resizer {
+  position: relative;
+  width: 100%;
+  height: 10px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(9, 13, 22, 0.96) 0%, rgba(15, 23, 42, 0.98) 100%);
+  border-top: 1px solid rgba(56, 189, 248, 0.24);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  touch-action: none;
+  z-index: 15;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+/* 擴大隱形觸控與滑鼠拖拉感應範圍，不佔用實際版面高度但極易抓取 */
+.split-resizer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  bottom: -6px;
+  z-index: 1;
+}
+
+.split-resizer-grip {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 100%;
+  pointer-events: none;
+}
+
+.split-resizer-pill {
+  width: 42px;
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(148, 163, 184, 0.58);
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.25);
+  transition: all 0.18s ease;
+}
+
+.split-resizer:hover,
+.widget-container.is-resizing-split .split-resizer {
+  background: rgba(14, 28, 54, 0.98);
+  border-top-color: rgba(56, 189, 248, 0.7);
+  border-bottom-color: rgba(56, 189, 248, 0.5);
+}
+
+.split-resizer:hover .split-resizer-pill,
+.widget-container.is-resizing-split .split-resizer-pill {
+  width: 58px;
+  background: var(--accent-sky);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.9);
 }
 
 /* ==================== 上半部：AI 繪圖展示區 ==================== */
@@ -627,6 +706,14 @@ input[type="range"] {
   min-height: 16px;
 }
 
+.day-events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .mini-event-pill {
   font-size: 0.74rem;
   padding: 1px 6px;
@@ -638,6 +725,10 @@ input[type="range"] {
   line-height: 1.35;
   color: #0f172a;
   font-weight: 600;
+}
+
+.mini-event-pill.extra-event-pill {
+  display: none;
 }
 
 .pill-sky { background: #e0f2fe; border-left: 3px solid #0284c7; color: #0c4a6e; }
@@ -658,6 +749,54 @@ input[type="range"] {
   font-size: 0.6rem;
   color: #d97706;
   font-weight: 700;
+}
+
+.ind-dot.ind-more-expanded,
+.ind-dot.ind-more-tall {
+  display: none;
+}
+
+/* 當使用者將分隔線往上拉、擴大月曆日期格佔比時，自動切換為全寬多行清晰佈局 */
+.widget-container.month-grid-expanded .day-cell-Previews {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 3px;
+  flex: 1;
+  min-height: 0;
+}
+
+.widget-container.month-grid-expanded .day-events-list {
+  width: 100%;
+}
+
+.widget-container.month-grid-expanded .mini-event-pill.pill-idx-2 {
+  display: block;
+}
+
+.widget-container.month-grid-expanded .ind-dot.ind-more-compact {
+  display: none;
+}
+
+.widget-container.month-grid-expanded .ind-dot.ind-more-expanded {
+  display: inline;
+}
+
+.widget-container.month-grid-expanded .day-indicators {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.widget-container.month-grid-tall .mini-event-pill.pill-idx-3 {
+  display: block;
+}
+
+.widget-container.month-grid-tall .ind-dot.ind-more-expanded {
+  display: none;
+}
+
+.widget-container.month-grid-tall .ind-dot.ind-more-tall {
+  display: inline;
 }
 
 /* ==================== 2. 週曆與日曆共用頂部導覽列 ==================== */
@@ -1548,14 +1687,30 @@ input[type="range"] {
     padding: 3px 10px max(4px, env(safe-area-inset-bottom));
   }
 
-  /* 週曆與日曆模式下，提高手機版上方 AI 繪圖區佔比，並採三段式上下分層避免遮擋畫作 */
+  /* 週曆與日曆模式下，提高手機版上方 AI 繪圖區佔比，並採三段式上下分層避免遮擋畫作；支援拖拉調整 */
   .widget-container.view-week .artwork-section,
   .widget-container.view-day .artwork-section {
-    height: 36%;
+    height: var(--subview-art-height, 36%);
+    flex-shrink: 0;
   }
   .widget-container.view-week .calendar-section,
   .widget-container.view-day .calendar-section {
-    height: 64%;
+    flex: 1;
+    height: auto;
+    min-height: 0;
+  }
+
+  .split-resizer {
+    height: 12px;
+  }
+  .split-resizer::before {
+    top: -8px;
+    bottom: -8px;
+  }
+  .split-resizer-pill {
+    width: 46px;
+    height: 4px;
+    background: rgba(186, 230, 253, 0.65);
   }
 
   .artwork-section {
@@ -1785,6 +1940,30 @@ input[type="range"] {
   .mini-event-pill {
     font-size: 0.58rem;
     padding: 1px 3px;
+  }
+
+  /* 手機版拉大月曆日期格時，放大日期數字與行程字體，提升閱讀清晰度 */
+  .widget-container.month-grid-expanded .day-cell {
+    padding: 3px 4px;
+    gap: 2px;
+  }
+  .widget-container.month-grid-expanded .day-num {
+    font-size: 0.9rem;
+  }
+  .widget-container.month-grid-expanded .day-tag {
+    font-size: 0.64rem;
+    max-width: 64%;
+  }
+  .widget-container.month-grid-expanded .mini-event-pill {
+    font-size: 0.64rem;
+    padding: 1px 4px;
+  }
+  .widget-container.month-grid-tall .day-num {
+    font-size: 0.96rem;
+  }
+  .widget-container.month-grid-tall .mini-event-pill {
+    font-size: 0.68rem;
+    padding: 2px 4px;
   }
 
   /* 3. 週曆與日曆次級工具列 (.subview-toolbar) 緊湊化分排，消除斷行與浪費空間 */

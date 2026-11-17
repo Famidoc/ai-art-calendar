@@ -139,6 +139,20 @@
       <input id="file-import-json" type="file" accept=".json,application/json" class="hidden" />
     </section>
 
+    <!-- 上下拖曳分隔線：可自由拉動調整圖片與下方月曆/週曆/日曆的顯示佔比 -->
+    <div
+      id="split-resizer"
+      class="split-resizer no-drag"
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="上下拖拉調整圖片與日期格顯示佔比"
+      title="上下拖拉可調整圖片與下方日曆顯示佔比（雙擊還原預設比例）"
+    >
+      <div class="split-resizer-grip">
+        <span class="split-resizer-pill"></span>
+      </div>
+    </div>
+
     <!-- ==================== 下半部：月曆 / 週曆 / 日曆 互動內容區 ==================== -->
     <main id="calendar-section" class="calendar-section">
       
